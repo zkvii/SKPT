@@ -1,3 +1,4 @@
+from collections import defaultdict
 from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
 from nltk.translate.meteor_score import single_meteor_score, meteor_score
 from nltk import word_tokenize
@@ -26,8 +27,8 @@ import torch
 """
 # models = ['cem_en','cem_base','cem_en_rels','cem_en_rels_token','cem_en_rels_token_senti','cem_en_rels_token_senti_loss6','cem_en_token','empdg','mime','moel']
 
-# models = ['cem_base', 'empdg', 'mime', 'moel', 'seek', 'gpt3', 'chatgpt','cem_en_rels_token_senti_loss6']
-models = ['cem_base']
+models = ['cem_base', 'empdg', 'mime', 'moel', 'seek', 'gpt3', 'chatgpt','cem_en_rels_token_senti_loss6']
+# models = ['cem_base']
 # model = models[5]     #要计算机器指标的模型的序号
 # path = '/data/liukai/space/CEM/save/test/'+model+'/' #寻找模型目录
 # test
@@ -38,7 +39,7 @@ paths = ['/data/liukai/space/CEM/save/test/'+model+'/' for model in models]
 """
 metric_headers = ['Model', 'Bleu-1', 'Bleu-2', 'Bleu-3',
                   'Bleu-4', 'Rouge-L', 'Dist-1', 'Dist-2', 'Meteor', 'CIDEr']
-metric_table = []
+# metric_table = []
 # def calc_cider(candidates, references, print_score: bool = True): #计算cider的函数
 
 interpunctuations = [',', '.', ':', ';', '?',
@@ -71,8 +72,11 @@ def calc_distinct_n(n, candidates, print_score: bool = True):  # 计算dist-n的
 
 def metric_models(paths: List, models: List):
 
-    metrics = {}
-    model_result_dict = {}
+    # metrics = {}
+    # model_result_dict = {}
+    
+    acc_metrics=[]
+    metrics=[]
     for model_path, model_name in zip(paths, models):
         text = ''
         rouge = Rouge()
@@ -116,26 +120,40 @@ def metric_models(paths: List, models: List):
 
         # assert len(beam) == len(greedy)  # 确保一一对应
         if len(beam) == len(ref):
-            # beam_ret = calc_bleu_n_rougue_l_dist_n(ref,  beam, False)
-            # model_result_dict[model_name+'_beam'] = beam_ret
-            beam_metric = aac_lib_calc(ref, beam)
-            for k in beam_metric:
-                if f'beam_{k}' in metrics:
-                    metrics[f'beam_{k}'].append(beam_metric[k])
-                else:
-                    metrics[f'beam_{k}'] = [beam_metric[k]]
+            acc_beam_metric = aac_lib_calc(ref, beam)
+            acc_beam_metric['model'] = model_name+'_beam'
+            # every metric
+            # for k in beam_metric:
+            #     if f'beam_{k}' in metrics:
+            #         acc_metrics[f'{k}'].append(beam_metric[k])
+            #     else:
+            #         acc_metrics[f'beam_{k}'] = [beam_metric[k]]
 
+            beam_metric = calc_bleu_n_rougue_l_dist_n(ref,  beam, False)
+            beam_metric['model'] = model_name+'_beam'
+            
+            acc_metrics.append(acc_beam_metric)
+            metrics.append(beam_metric)
+            # {'cem_en':[bleu1,bleu2,bleu3,bleu4,rouge_l,dist1,dist2,meteor,cider_d]}
         # assert len(beam) == len(ref)
         if len(greedy) == len(ref):
-            aac_lib_calc(ref, greedy)
-            for k in beam_metric:
-                if f'beam_{k}' in metrics:
-                    metrics[f'beam_{k}'].append(beam_metric[k])
-                else:
-                    metrics[f'beam_{k}'] = [beam_metric[k]]
-            # greedy_ret = calc_bleu_n_rougue_l_dist_n(ref, greedy, False)
-            # model_result_dict[model_name+'_greedy'] = greedy_ret
-    return model_result_dict, metrics
+            
+            acc_greedy_metric=aac_lib_calc(ref, greedy)
+            acc_greedy_metric['model'] = model_name+'_greedy'
+            # for k in greedy_metric:
+            #     if f'greedy_{k}' in metrics:
+            #         metrics[f'greedy_{k}'].append(greedy_metric[k])
+            #     else:
+            #         metrics[f'greedy_{k}'] = [greedy_metric[k]]
+                    
+            greedy_metric = calc_bleu_n_rougue_l_dist_n(ref, greedy, False)
+            greedy_metric['model'] = model_name+'_greedy'
+            
+            acc_metrics.append(acc_greedy_metric)
+            metrics.append(greedy_metric)
+    # model_result_dict['Model'] = [model_name for model_name in models]
+    # metrics['Model'] = [model_name for model_name in models]
+    return acc_metrics,metrics
 
 
 # tokenizer = PTBTokenizer('gts')
@@ -167,10 +185,10 @@ def filter_empty(refs, candidates):
 def aac_lib_calc(refs, candidates):
     filterred_cans, filterred_refs = filter_empty(refs, candidates)
     refs = [[ref] for ref in filterred_refs]
-    print(len(candidates), len(filterred_cans))
+    assert len(refs) == len(filterred_cans)
     try:
         aac_metric, _ = evaluate(filterred_cans, refs, metrics=[
-                                 'bleu_1', 'bleu_2', 'bleu_3', 'bleu_4', 'meteor', 'rouge_l', 'spice', 'spider', 'cider_d'])
+                                 'bleu_1', 'bleu_2', 'bleu_3', 'bleu_4', 'meteor', 'rouge_l', 'cider_d'])
     except Exception as e:
         print(e)
     print(aac_metric)
@@ -188,8 +206,11 @@ def calc_bleu_n_rougue_l_dist_n(ref, hypo, print_score: bool = True):
     meteor = []
 
     cider_d = 0
-    candidates = hypo
     # candidates=[[candidate] for candidate in hypo]
+
+    ref,hypo=filter_empty(ref,hypo)
+    candidates = hypo
+    assert len(ref) == len(hypo)
     references = [[refer] for refer in ref]
     aac_cider, _ = evaluate(candidates, references, metrics=['cider_d'])
     cider_d = aac_cider['cider_d']
@@ -231,20 +252,47 @@ def calc_bleu_n_rougue_l_dist_n(ref, hypo, print_score: bool = True):
             print(ref_resp)
     dist_1 = calc_distinct_n(1, hypo, False)
     dist_2 = calc_distinct_n(2, hypo, False)
-    return [np.mean(bleu_1), np.mean(bleu_2), np.mean(bleu_3),
-            np.mean(bleu_4), np.mean(rouge_l), dist_1, dist_2, np.mean(meteor), cider_d]
+    return {
+        'bleu_1': np.mean(bleu_1),
+        'bleu_2': np.mean(bleu_2),
+        'bleu_3': np.mean(bleu_3),
+        'bleu_4': np.mean(bleu_4),
+        'rouge_l': np.mean(rouge_l),
+        'dist_1': dist_1,
+        'dist_2': dist_2,
+        'meteor': np.mean(meteor),
+        'cider_d': cider_d
+    }
+    # return [np.mean(bleu_1), np.mean(bleu_2), np.mean(bleu_3),
+    #         np.mean(bleu_4), np.mean(rouge_l), dist_1, dist_2, np.mean(meteor), cider_d]
 
 
 if __name__ == '__main__':
-    model_metric_dict, aac_metrics = metric_models(paths, models)
+    acc_metrics, metrics = metric_models(paths, models)
+
+    # concate all dict in one dict
+    merged_acc_metrics = defaultdict(list)
+    merged_metrics=defaultdict(list)
+    
+    for metric in acc_metrics:
+        for k,v in metric.items():
+            merged_acc_metrics[k].append(v)
+            
+    for metric in metrics:
+        for k,v in metric.items():
+            merged_metrics[k].append(v)
+    
+    print(tabulate(merged_acc_metrics, headers='keys', tablefmt='tsv'))
+    print(tabulate(merged_metrics, headers='keys', tablefmt='tsv'))
+        
     # for key in model_metric_dict:
     #     metric_table.append([key]+model_metric_dict[key])
     # print(tabulate(metric_table, headers=metric_headers, tablefmt='github'))
-    print(tabulate(model_metric_dict, headers='keys', tablefmt='tsv'))
-    print(tabulate(aac_metrics, headers='keys', tablefmt='tsv'))
+    # print(tabulate(model_metric_dict, headers='keys', tablefmt='tsv'))
+    # print(tabulate(aac_metrics, headers='keys', tablefmt='tsv'))
 
-    with open('metric_result.tsv', 'w') as f:
-        f.write(tabulate(metric_table, headers=metric_headers, tablefmt='tsv'))
+    with open('metrics.tsv', 'w') as f:
+        f.write(tabulate(merged_metrics, headers='keys', tablefmt='tsv'))
 
     with open('aac_metrics.tsv', 'w') as f:
-        f.write(tabulate(aac_metrics, headers='keys', tablefmt='tsv'))
+        f.write(tabulate(merged_acc_metrics, headers='keys', tablefmt='tsv'))

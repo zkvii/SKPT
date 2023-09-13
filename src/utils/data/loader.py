@@ -246,12 +246,16 @@ class Dataset(data.Dataset):
         item["x_react_txt"] = item["cs_text"][4]
 
         ## 模型改动2：过滤非动词、名词、形容词的token*****************************************************************************
-        if config.model == "cem_en":
-            item["x_intent_txt"] = filter_words_by_pos(item["x_intent_txt"])
-            item["x_need_txt"] = filter_words_by_pos(item["x_need_txt"])
-            item["x_want_txt"] = filter_words_by_pos(item["x_want_txt"])
-            item["x_effect_txt"] = filter_words_by_pos(item["x_effect_txt"])
-            item['target_keywords_text'] = filter_words_by_pos(item["target_text"])
+        # if config.model == "cem_en" or 'skpt':
+        item["x_intent_txt_filtered"] = filter_words_by_pos(item["x_intent_txt"])
+        item["x_need_txt_filtered"] = filter_words_by_pos(item["x_need_txt"])
+        item["x_want_txt_filtered"] = filter_words_by_pos(item["x_want_txt"])
+        item["x_effect_txt_filtered"] = filter_words_by_pos(item["x_effect_txt"])
+        item['target_keywords_text_filtered'] = filter_words_by_pos(item["target_text"])
+        item['x_intent_filtered']=self.preprocess(item["x_intent_txt_filtered"], cs=True)
+        item['x_need_filtered']=self.preprocess(item["x_need_txt_filtered"], cs=True)
+        item['x_want_filtered']=self.preprocess(item["x_want_txt_filtered"], cs=True)
+        item['x_effect_filtered']=self.preprocess(item["x_effect_txt_filtered"], cs=True)
         ## 模型改动2：过滤非动词、名词、形容词的token*****************************************************************************
 
         item["x_intent"] = self.preprocess(item["x_intent_txt"], cs=True)
@@ -260,10 +264,13 @@ class Dataset(data.Dataset):
         item["x_effect"] = self.preprocess(item["x_effect_txt"], cs=True)
         item["x_react"] = self.preprocess(item["x_react_txt"], cs="react")
 
-        if config.model == 'cem_en':
-            item['senti'] = self.preprocess_senti(item["context_text"]) #得到情感极性的值
-            item["target_keywords"] = self.preprocess(item["target_keywords_text"], anw=True) #得到target的keywords的序号
+        # if config.model == 'cem_en' or 'skpt':
+        #---------------------target_keywords---------------------
+        item['senti'] = self.preprocess_senti(item["context_text"]) #得到情感极性的值
+        item["target_keywords"] = self.preprocess(item["target_keywords_text_filtered"], anw=True) #得到target的keywords的序号
             #此处不能直接改原始的item["target"]，因为item["target"]在计算其他loss时有用，不能改变，因此需要新建一个item["target_keywords"]
+        #---------------------target_keywords---------------------(end)
+        
         return item
 
     def preprocess(self, arr, anw=False, cs=None, emo=False):
@@ -395,12 +402,13 @@ def collate_fn(data):
     ## Target
     target_batch, target_lengths = merge(item_info["target"])
 
-    if config.model == 'cem_en':
-        senti_batch,senti_length = merge_senti(item_info["senti"])
-        senti_batch = senti_batch.to(config.device)
-        target_keywords_batch,target_keywords_length = merge(item_info["target_keywords"])
-        target_keywords_batch = target_keywords_batch.to(config.device)
-
+    #--------------------merge senti and keywords--------------
+    # if config.model == 'cem_en' or 'skpt':
+    senti_batch,senti_length = merge_senti(item_info["senti"])
+    senti_batch = senti_batch.to(config.device)
+    target_keywords_batch,target_keywords_length = merge(item_info["target_keywords"])
+    target_keywords_batch = target_keywords_batch.to(config.device)
+    #--------------------merge senti and keywords--------------(end)
 
     input_batch = input_batch.to(config.device)
     mask_input = mask_input.to(config.device)
@@ -414,10 +422,12 @@ def collate_fn(data):
     d["target_batch"] = target_batch
     d["target_lengths"] = torch.LongTensor(target_lengths)
     d["emotion_context_batch"] = emotion_batch.to(config.device)
-    if config.model == 'cem_en':
-        d["senti_batch"] = senti_batch
-        d["target_keywords_batch"] = target_keywords_batch
-        d["target_keywords_length"] = torch.LongTensor(target_keywords_length)
+    #--------------------------collate senti and keywords---------------------
+    # if config.model == 'cem_en' or 'skpt':
+    d["senti_batch"] = senti_batch
+    d["target_keywords_batch"] = target_keywords_batch
+    d["target_keywords_length"] = torch.LongTensor(target_keywords_length)
+    #--------------------------collate senti and keywords---------------------(end)
     ##program
     d["target_program"] = item_info["emotion"]
     d["program_label"] = item_info["emotion_label"]
@@ -443,7 +453,6 @@ def collate_fn(data):
 def prepare_data_seq(batch_size=32):
 
     pairs_tra, pairs_val, pairs_tst, vocab = load_dataset()
-
     logging.info("Vocab  {} ".format(vocab.n_words))
 
     dataset_train = Dataset(pairs_tra, vocab)
@@ -462,6 +471,7 @@ def prepare_data_seq(batch_size=32):
         collate_fn=collate_fn,
     )
     dataset_test = Dataset(pairs_tst, vocab)
+    
     data_loader_tst = torch.utils.data.DataLoader(
         dataset=dataset_test, batch_size=1, shuffle=False, collate_fn=collate_fn
     )

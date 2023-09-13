@@ -16,7 +16,7 @@ elif config.model == "moel":
     from src.utils.decode.moel import Translator
 elif config.model == "mime":
     from src.utils.decode.mime import Translator
-if config.model == "cem" or config.model == "cem_en":
+if config.model == "cem" or "cem_en" or 'skpt':
     from src.utils.decode.cem import Translator
 
 
@@ -937,12 +937,14 @@ def evaluate(model, data, ty="valid", max_dec_step=30):
     acc = []
     top_preds = []
     comet_res = []
+    # for test
     pbar = tqdm(enumerate(data), total=len(data))
+    # pbar = tqdm(enumerate(data), total=10)
 
     if config.model != "empdg":
         t = Translator(model, model.vocab)
     for j, batch in pbar:
-        if config.model == "cem" or config.model == "cem_en" :
+        if config.model == "cem" or 'cem_en' or 'skpt':
             loss, ppl, bce_prog, acc_prog, top_preds, comet_res = model.train_one_batch(
                 batch, 0, train=False
             )

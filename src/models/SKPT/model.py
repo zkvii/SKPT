@@ -1,4 +1,4 @@
-### TAKEN FROM https://github.com/kolloldas/torchnlp
+# TAKEN FROM https://github.com/kolloldas/torchnlp
 import os
 import torch
 import torch.nn as nn
@@ -27,7 +27,7 @@ from src.models.common import (
 )
 from src.utils import config
 from src.utils.constants import MAP_EMO
-if config.model == "skpt" :
+if config.model == "skpt":
     from src.utils.decode.cem import Translator
 
 from sklearn.metrics import accuracy_score
@@ -82,7 +82,7 @@ class Encoder(nn.Module):
         self.timing_signal = _gen_timing_signal(max_length, hidden_size)
 
         if self.universal:
-            ## for t
+            # for t
             self.position_signal = _gen_timing_signal(num_layers, hidden_size)
 
         params = (
@@ -97,11 +97,13 @@ class Encoder(nn.Module):
             relu_dropout,
         )
 
-        self.embedding_proj = nn.Linear(embedding_size, hidden_size, bias=False)
+        self.embedding_proj = nn.Linear(
+            embedding_size, hidden_size, bias=False)
         if self.universal:
             self.enc = EncoderLayer(*params)
         else:
-            self.enc = nn.ModuleList([EncoderLayer(*params) for _ in range(num_layers)])
+            self.enc = nn.ModuleList([EncoderLayer(*params)
+                                     for _ in range(num_layers)])
 
         self.layer_norm = LayerNorm(hidden_size)
         self.input_dropout = nn.Dropout(input_dropout)
@@ -139,7 +141,8 @@ class Encoder(nn.Module):
                 y = self.layer_norm(x)
         else:
             # Add timing signal
-            x += self.timing_signal[:, : inputs.shape[1], :].type_as(inputs.data)
+            x += self.timing_signal[:,
+                                    : inputs.shape[1], :].type_as(inputs.data)
 
             for i in range(self.num_layers):
                 x = self.enc[i](x, mask)
@@ -195,7 +198,7 @@ class Decoder(nn.Module):
         self.timing_signal = _gen_timing_signal(max_length, hidden_size)
 
         if self.universal:
-            ## for t
+            # for t
             self.position_signal = _gen_timing_signal(num_layers, hidden_size)
 
         self.mask = _get_attn_subsequent_mask(max_length)
@@ -219,14 +222,16 @@ class Decoder(nn.Module):
                 *[DecoderLayer(*params) for l in range(num_layers)]
             )
 
-        self.embedding_proj = nn.Linear(embedding_size, hidden_size, bias=False)
+        self.embedding_proj = nn.Linear(
+            embedding_size, hidden_size, bias=False)
         self.layer_norm = LayerNorm(hidden_size)
         self.input_dropout = nn.Dropout(input_dropout)
 
     def forward(self, inputs, encoder_output, mask):
         src_mask, mask_trg = mask
         dec_mask = torch.gt(
-            mask_trg + self.mask[:, : mask_trg.size(-1), : mask_trg.size(-1)], 0
+            mask_trg + self.mask[:,
+                                 : mask_trg.size(-1), : mask_trg.size(-1)], 0
         )
         # Add input dropout
         x = self.input_dropout(inputs)
@@ -247,7 +252,8 @@ class Decoder(nn.Module):
                 y = self.layer_norm(x)
 
             else:
-                x += self.timing_signal[:, : inputs.shape[1], :].type_as(inputs.data)
+                x += self.timing_signal[:,
+                                        : inputs.shape[1], :].type_as(inputs.data)
                 for l in range(self.num_layers):
                     x += (
                         self.position_signal[:, l, :]
@@ -261,10 +267,12 @@ class Decoder(nn.Module):
                 y = self.layer_norm(x)
         else:
             # Add timing signal
-            x += self.timing_signal[:, : inputs.shape[1], :].type_as(inputs.data)
+            x += self.timing_signal[:,
+                                    : inputs.shape[1], :].type_as(inputs.data)
 
             # Run decoder
-            y, _, attn_dist, _ = self.dec((x, encoder_output, [], (src_mask, dec_mask)))
+            y, _, attn_dist, _ = self.dec(
+                (x, encoder_output, [], (src_mask, dec_mask)))
 
             # Final layer normalization
             y = self.layer_norm(y)
@@ -304,11 +312,11 @@ class Generator(nn.Module):
             attn_dist_ = (1 - alpha) * attn_dist
             enc_batch_extend_vocab_ = torch.cat(
                 [enc_batch_extend_vocab.unsqueeze(1)] * x.size(1), 1
-            )  ## extend for all seq
+            )  # extend for all seq
             if beam_search:
                 enc_batch_extend_vocab_ = torch.cat(
                     [enc_batch_extend_vocab_[0].unsqueeze(0)] * x.size(0), 0
-                )  ## extend for all seq
+                )  # extend for all seq
             logit = torch.log(
                 vocab_dist_.scatter_add(2, enc_batch_extend_vocab_, attn_dist_)
             )
@@ -339,12 +347,14 @@ class MLP(nn.Module):
         return x
 
 # 自定义损失函数
+
+
 class CustomLoss(nn.Module):
     def __init__(self, vocab):
         super(CustomLoss, self).__init__()
         self.vocab = vocab
         self.tfidf_vectorizer = TfidfVectorizer()
-    
+
     def forward(self, predicted, target):
         loss = 0.0
         for pred_seq, target_seq in zip(predicted, target):
@@ -361,42 +371,42 @@ class CustomLoss(nn.Module):
                 filtered_pred = filtered_pred[:target_length]
             # 将单词转换为索引
             pred_indices = [self.vocab.word2index[word]
-                if word in self.vocab.word2index
-                else config.UNK_idx
-                for word in filtered_pred]
+                            if word in self.vocab.word2index
+                            else config.UNK_idx
+                            for word in filtered_pred]
             target_indices = [self.vocab.word2index[word]
-                if word in self.vocab.word2index
-                else config.UNK_idx
-                for word in filtered_target]
-            
+                              if word in self.vocab.word2index
+                              else config.UNK_idx
+                              for word in filtered_target]
+
             # 转换为张量
-            pred_indices = torch.tensor(pred_indices,dtype=torch.float)
-            target_indices = torch.tensor(target_indices,dtype=torch.float)
-            
+            pred_indices = torch.tensor(pred_indices, dtype=torch.float)
+            target_indices = torch.tensor(target_indices, dtype=torch.float)
+
             # 计算交叉熵损失
             criterion = nn.CrossEntropyLoss()
-            #mse_loss = nn.MSELoss()
-            #nll_loss = nn.NLLLoss()
+            # mse_loss = nn.MSELoss()
+            # nll_loss = nn.NLLLoss()
             predicted_probs = nn.functional.softmax(pred_indices, dim=0)
             target_probs = nn.functional.softmax(target_indices, dim=0)
-            
+
             loss += criterion(predicted_probs, target_probs)
-        
+
         return loss / len(predicted)
-    
+
     def clean_sentence(self, sentence):
         # 去除标点符号和非法字符
         cleaned_sentence = re.sub(r'[^\w\s]', '', sentence)
         return cleaned_sentence
-    
+
     def filter_and_select_words(self, words):
         # 对文本进行过滤，只保留动词、名词和形容词
         filtered_words = []
         for word, pos in pos_tag(words.split()):
             pos = pos[0].upper()  # 取词性标记的首字母
-            if pos in ['N', 'V', 'J','P'] and word in self.vocab.word2index:  # 名词、动词、形容词的词性标记
+            if pos in ['N', 'V', 'J', 'P'] and word in self.vocab.word2index:  # 名词、动词、形容词的词性标记
                 filtered_words.append(word)
-        
+
         """# 将单词转换为字符串
         text = ' '.join(filtered_words)
         if text.replace(' ','') != '':
@@ -424,9 +434,60 @@ class CustomLoss(nn.Module):
                 selected_words.append('')
         else:
             selected_words=['','','','']"""
-        
+
         selected_words = filtered_words
         return selected_words
+
+# ------------------gcn module---------------
+
+
+class TwoLayerGCN(nn.Module):
+    def __init__(self, input_dim, hidden_dim, output_dim):
+        super(TwoLayerGCN, self).__init__()
+        self.fc1 = nn.Linear(input_dim, hidden_dim)
+        self.fc2 = nn.Linear(hidden_dim, output_dim)
+
+    def forward(self, x, adjacency_matrix):
+        # Compute the normalized adjacency matrix
+        degree_matrix = torch.sum(adjacency_matrix, dim=2, keepdim=True)
+        normalized_adjacency_matrix = adjacency_matrix / \
+            (degree_matrix + 1e-6)  # Adding a small epsilon for stability
+
+        # Perform the first graph convolution
+        x = torch.matmul(normalized_adjacency_matrix, x)
+        x = self.fc1(x)
+        x = F.relu(x)
+
+        # Perform the second graph convolution
+        x = torch.matmul(normalized_adjacency_matrix, x)
+        x = self.fc2(x)
+        x = F.relu(x)
+
+        return x
+# ----------------gcn module----------------(end)
+
+# ----------------gru module----------------
+
+
+class GRUModel(nn.Module):
+    def __init__(self, input_size, hidden_size, num_layers, output_size):
+        super(GRUModel, self).__init__()
+        self.gru = nn.GRU(input_size, hidden_size,
+                          num_layers, batch_first=True)
+        self.fc = nn.Linear(hidden_size, output_size)
+
+    def forward(self, x):
+        # Forward pass through GRU
+        out, _ = self.gru(x)
+
+        # Get the output from the last time step
+        out = out[:, -1, :]
+
+        # Fully connected layer
+        out = self.fc(out)
+        return out
+# ----------------gru module----------------(end)
+
 
 class SKPT(nn.Module):
     def __init__(
@@ -436,6 +497,7 @@ class SKPT(nn.Module):
         model_file_path=None,
         is_eval=False,
         load_optim=False,
+        gcn_layer_num=2
     ):
         super(SKPT, self).__init__()
         self.vocab = vocab
@@ -452,11 +514,17 @@ class SKPT(nn.Module):
         self.emo_encoder = self.make_encoder(config.emb_dim)
         self.cog_encoder = self.make_encoder(config.emb_dim)
 
-        self.senti_encoder = self.make_encoder(config.emb_dim) #新增的encoder
+        self.senti_encoder = self.make_encoder(config.emb_dim)  # 新增的encoder
 
         self.emo_ref_encoder = self.make_encoder(2 * config.emb_dim)
         self.cog_ref_encoder = self.make_encoder(2 * config.emb_dim)
-       
+
+        # two layer gcn
+        self.gcn_layer_num = gcn_layer_num
+        self.KGCN = TwoLayerGCN(
+            config.hidden_dim, config.hidden_dim, config.hidden_dim)
+
+        self.KGRU=GRUModel(config.hidden_dim, config.hidden_dim, 1, config.hidden_dim)
 
         self.decoder = Decoder(
             config.emb_dim,
@@ -468,7 +536,7 @@ class SKPT(nn.Module):
             filter_size=config.filter,
         )
 
-        self.keywords_decoder = Decoder( #新的decoder
+        self.keywords_decoder = Decoder(  # 新的decoder
             config.emb_dim,
             hidden_size=config.hidden_dim,
             num_layers=config.hop,
@@ -484,14 +552,16 @@ class SKPT(nn.Module):
 
         self.generator = Generator(config.hidden_dim, self.vocab_size)
 
-        self.keywords_generator = Generator(config.hidden_dim, self.vocab_size) #新的generator
+        self.keywords_generator = Generator(
+            config.hidden_dim, self.vocab_size)  # 新的generator
 
         self.activation = nn.Softmax(dim=1)
 
         if config.weight_sharing:
             self.generator.proj.weight = self.embedding.lut.weight
 
-        self.criterion = nn.NLLLoss(ignore_index=config.PAD_idx, reduction="sum")
+        self.criterion = nn.NLLLoss(
+            ignore_index=config.PAD_idx, reduction="sum")
         if not config.woDiv:
             self.criterion.weight = torch.ones(self.vocab_size)
         self.criterion_ppl = nn.NLLLoss(ignore_index=config.PAD_idx)
@@ -502,7 +572,8 @@ class SKPT(nn.Module):
                 config.hidden_dim,
                 1,
                 8000,
-                torch.optim.Adam(self.parameters(), lr=0, betas=(0.9, 0.98), eps=1e-9),
+                torch.optim.Adam(self.parameters(), lr=0,
+                                 betas=(0.9, 0.98), eps=1e-9),
             )
 
         if model_file_path is not None:
@@ -577,20 +648,22 @@ class SKPT(nn.Module):
         return torch.FloatTensor(weight).to(config.device)
 
     def forward(self, batch):
-        ## Encode the context (Semantic Knowledge)
-        enc_batch = batch["input_batch"] #batch_size*92 （92为seq length）
-        src_mask = enc_batch.data.eq(config.PAD_idx).unsqueeze(1) #batch_size*1*92
+        # Encode the context (Semantic Knowledge)
+        enc_batch = batch["input_batch"]  # batch_size*92 （92为seq length）
+        src_mask = enc_batch.data.eq(
+            config.PAD_idx).unsqueeze(1)  # batch_size*1*92
 
         # 模型改动3：新增senti embedding，将其融入其他embeding种，同时创建新的senti_encoder得到senti output*****************************************************************************
-        senti_emb = self.embedding(batch['senti_batch']) #新增的senti embedding
-        senti_outputs = self.senti_encoder(senti_emb,src_mask)
+        senti_emb = self.embedding(batch['senti_batch'])  # 新增的senti embedding
+        senti_outputs = self.senti_encoder(senti_emb, src_mask)
         # 模型改动3：新增senti embedding，将其融入其他embeding种，同时创建新的senti_encoder得到senti output*****************************************************************************
 
-        mask_emb = self.embedding(batch["mask_input"]) #batch_size*92*300（300为embedding dim）
-        src_emb = self.embedding(enc_batch) + mask_emb + senti_emb #batch_size*92*300
-        enc_outputs = self.encoder(src_emb, src_mask)  # batch_size * seq_len * 300 (#batch_size*92*300)
-
-        
+        # batch_size*92*300（300为embedding dim）
+        mask_emb = self.embedding(batch["mask_input"])
+        src_emb = self.embedding(enc_batch) + mask_emb + \
+            senti_emb  # batch_size*92*300
+        # batch_size * seq_len * 300 (#batch_size*92*300)
+        enc_outputs = self.encoder(src_emb, src_mask)
 
         # Commonsense relations
         cs_embs = []
@@ -599,47 +672,72 @@ class SKPT(nn.Module):
         for r in self.rels:
             if r != "x_react":
                 # 模型改动1：把x_react直接连接在其他4个后面*****************************************************************************
-                new_batch = torch.cat((batch[r], batch['x_react']), dim=1) #把x_react直接连接在其他4个后面，构造出新的输入
+                # 把x_react直接连接在其他4个后面，构造出新的输入
+                new_batch = torch.cat((batch[r], batch['x_react']), dim=1)
                 emb = self.embedding(new_batch).to(config.device)
-                #emb = self.embedding(batch[r]).to(config.device)
-                mask = new_batch.data.eq(config.PAD_idx).unsqueeze(1) #batchsize*1*x
-                #mask = batch[r].data.eq(config.PAD_idx).unsqueeze(1)
-                enc_output = self.cog_encoder(emb, mask) #batchsize*x*300
+                # emb = self.embedding(batch[r]).to(config.device)
+                mask = new_batch.data.eq(
+                    config.PAD_idx).unsqueeze(1)  # batchsize*1*x
+                # mask = batch[r].data.eq(config.PAD_idx).unsqueeze(1)
+                enc_output = self.cog_encoder(emb, mask)  # batchsize*x*300
                 # 模型改动1：把x_react直接连接在其他4个后面*****************************************************************************
             else:
-                emb = self.embedding(batch[r]).to(config.device) #batchsize*x*300(x是commonsense序列的长度，在5个rels里不同)
-                mask = batch[r].data.eq(config.PAD_idx).unsqueeze(1) #batchsize*1*x
-                enc_output = self.emo_encoder(emb, mask) #batchsize*x*300
-            #cs_embs.append(emb)
-            #cs_masks.append(mask)
+                # batchsize*x*300(x是commonsense序列的长度，在5个rels里不同)
+                emb = self.embedding(batch[r]).to(config.device)
+                mask = batch[r].data.eq(
+                    config.PAD_idx).unsqueeze(1)  # batchsize*1*x
+                enc_output = self.emo_encoder(emb, mask)  # batchsize*x*300
+            # cs_embs.append(emb)
+            # cs_masks.append(mask)
             cs_outputs.append(enc_output)
 
-        cls_tokens = [c[:, 0].unsqueeze(1) for c in cs_outputs] #5个，每个都是batchsize*1*300
+        # -----------------------compute_keyword_graph----------------
+        graph_pooled_list = []
+        for r in self.rels:
+            if r != "x_react":
+                # batch_size*seq_len
+                cs_enc = batch[r+'_keywords']
+                cs_enc_emb = self.embedding(cs_enc)
+                # batch_size*seq_len*seq_len
+                cs_mat = batch[r+'_matrix']
+                graph_pooled_list.append(self.KGCN(cs_enc_emb, cs_mat))
+        graph_pooled_out = torch.cat(graph_pooled_list, dim=2)
+
+        # -----------------------compute_keyword_graph----------------(end)
+
+        # 5个，每个都是batchsize*1*300
+        cls_tokens = [c[:, 0].unsqueeze(1) for c in cs_outputs]
 
         # Shape: batch_size * 1 * 300
-        cog_cls = cls_tokens[:-1] #4个，包含前四个cls_tokens的值
-        emo_cls = torch.mean(cs_outputs[-1], dim=1).unsqueeze(1) #batch_size * 1 * 300
+        cog_cls = cls_tokens[:-1]  # 4个，包含前四个cls_tokens的值
+        # batch_size * 1 * 300
+        emo_cls = torch.mean(cs_outputs[-1], dim=1).unsqueeze(1)
 
-        #模型改动3：从senti_encoder得到的senti output，将结果取cls然后与emo output相加****************************************************
-        senti_cls = torch.mean(senti_outputs, dim=1).unsqueeze(1) #batch_size * 1 * 300
-        emo_cls += senti_cls #把senti的cls和emo的cls相加
-        #模型改动3：从senti_encoder得到的senti output，将结果取cls然后与emo output相加****************************************************
+        # 模型改动3：从senti_encoder得到的senti output，将结果取cls然后与emo output相加****************************************************
+        senti_cls = torch.mean(senti_outputs, dim=1).unsqueeze(
+            1)  # batch_size * 1 * 300
+        emo_cls += senti_cls  # 把senti的cls和emo的cls相加
+        # 模型改动3：从senti_encoder得到的senti output，将结果取cls然后与emo output相加****************************************************
 
-        dim = [-1, enc_outputs.shape[1], -1] #保持第一和第三维度不变，改变第二个维度
+        dim = [-1, enc_outputs.shape[1], -1]  # 保持第一和第三维度不变，改变第二个维度
         # Emotion
         if not config.woEMO:
-            emo_concat = torch.cat([enc_outputs, emo_cls.expand(dim)], dim=-1) #batch_size*92*600
-            emo_ref_ctx = self.emo_ref_encoder(emo_concat, src_mask) #batch_size*92*300
-            emo_logits = self.emo_lin(emo_ref_ctx[:, 0]) #batch_size*32
+            emo_concat = torch.cat(
+                [enc_outputs, emo_cls.expand(dim)], dim=-1)  # batch_size*92*600
+            emo_ref_ctx = self.emo_ref_encoder(
+                emo_concat, src_mask)  # batch_size*92*300
+            emo_logits = self.emo_lin(emo_ref_ctx[:, 0])  # batch_size*32
         else:
             emo_logits = self.emo_lin(enc_outputs[:, 0])
 
         # Cognition
         cog_outputs = []
         for cls in cog_cls:
-            cog_concat = torch.cat([enc_outputs, cls.expand(dim)], dim=-1) #batch_size*92*600
-            cog_concat_enc = self.cog_ref_encoder(cog_concat, src_mask)  #batch_size*92*300
-            cog_outputs.append(cog_concat_enc) #因为Cognition有四个，所以append
+            cog_concat = torch.cat(
+                [enc_outputs, cls.expand(dim)], dim=-1)  # batch_size*92*600
+            cog_concat_enc = self.cog_ref_encoder(
+                cog_concat, src_mask)  # batch_size*92*300
+            cog_outputs.append(cog_concat_enc)  # 因为Cognition有四个，所以append
 
         if config.woCOG:
             cog_ref_ctx = emo_ref_ctx
@@ -647,10 +745,11 @@ class SKPT(nn.Module):
             if config.woEMO:
                 cog_ref_ctx = torch.cat(cog_outputs, dim=-1)
             else:
-                cog_ref_ctx = torch.cat(cog_outputs + [emo_ref_ctx], dim=-1) #batch_size*92*1500
-            cog_contrib = nn.Sigmoid()(cog_ref_ctx) #batch_size*92*1500
+                cog_ref_ctx = torch.cat(
+                    cog_outputs + [emo_ref_ctx], dim=-1)  # batch_size*92*1500
+            cog_contrib = nn.Sigmoid()(cog_ref_ctx)  # batch_size*92*1500
             cog_ref_ctx = cog_contrib * cog_ref_ctx
-            cog_ref_ctx = self.cog_lin(cog_ref_ctx) #batch_size*92*300
+            cog_ref_ctx = self.cog_lin(cog_ref_ctx)  # batch_size*92*300
 
         return src_mask, cog_ref_ctx, emo_logits
 
@@ -666,9 +765,9 @@ class SKPT(nn.Module):
             _,
         ) = get_input_from_batch(batch)
         dec_batch, _, _, _, _ = get_output_from_batch(batch)
-        
 
-        dec_keywords_batch, _, _, _, _ = get_keywords_output_from_batch(batch) #提取了keywords的dec batch
+        dec_keywords_batch, _, _, _, _ = get_keywords_output_from_batch(
+            batch)  # 提取了keywords的dec batch
 
         if config.noam:
             self.optimizer.optimizer.zero_grad()
@@ -686,15 +785,20 @@ class SKPT(nn.Module):
         dec_batch_shift = torch.cat((sos_token, dec_batch[:, :-1]), dim=1)
         mask_trg = dec_batch_shift.data.eq(config.PAD_idx).unsqueeze(1)
 
-        dec_keywords_batch_shift = torch.cat((sos_token, dec_keywords_batch[:, :-1]), dim=1) #新增的keywords_batch_shift
-        mask_keywords_trg = dec_keywords_batch_shift.data.eq(config.PAD_idx).unsqueeze(1)   #新增的mask_keywords_trg
+        dec_keywords_batch_shift = torch.cat(
+            (sos_token, dec_keywords_batch[:, :-1]), dim=1)  # 新增的keywords_batch_shift
+        mask_keywords_trg = dec_keywords_batch_shift.data.eq(
+            config.PAD_idx).unsqueeze(1)  # 新增的mask_keywords_trg
 
         # batch_size * seq_len * 300 (GloVe)
         dec_emb = self.embedding(dec_batch_shift)
-        pre_logit, attn_dist = self.decoder(dec_emb, ctx_output, (src_mask, mask_trg))
+        pre_logit, attn_dist = self.decoder(
+            dec_emb, ctx_output, (src_mask, mask_trg))
 
-        dec_keywords_emb = self.embedding(dec_keywords_batch_shift) #新增的dec_keywords_emb，作为新增的keywords_decoder的输入
-        pre_keywords_logit, attn_keywords_dist = self.keywords_decoder(dec_keywords_emb, ctx_output, (src_mask, mask_keywords_trg))
+        # 新增的dec_keywords_emb，作为新增的keywords_decoder的输入
+        dec_keywords_emb = self.embedding(dec_keywords_batch_shift)
+        pre_keywords_logit, attn_keywords_dist = self.keywords_decoder(
+            dec_keywords_emb, ctx_output, (src_mask, mask_keywords_trg))
 
         logit = self.generator(
             pre_logit,
@@ -704,7 +808,7 @@ class SKPT(nn.Module):
             attn_dist_db=None,
         )
 
-        keywords_logit = self.keywords_generator( #新增的keywords_generator得到新的keywords_logit
+        keywords_logit = self.keywords_generator(  # 新增的keywords_generator得到新的keywords_logit
             pre_keywords_logit,
             attn_keywords_dist,
             enc_batch_extend_vocab if config.pointer_gen else None,
@@ -718,13 +822,12 @@ class SKPT(nn.Module):
             logit.contiguous().view(-1, logit.size(-1)),
             dec_batch.contiguous().view(-1),
         )
-        #模型改动4：新增keyword_loss******************************************************************
+        # 模型改动4：新增keyword_loss******************************************************************
         keyword_loss = self.criterion_ppl(
             keywords_logit.contiguous().view(-1, logit.size(-1)),
             dec_keywords_batch.contiguous().view(-1),
         )
-        #模型改动4：新增keyword_loss******************************************************************
-
+        # 模型改动4：新增keyword_loss******************************************************************
 
         if not (config.woDiv):
             _, preds = logit.max(dim=-1)
@@ -738,16 +841,19 @@ class SKPT(nn.Module):
                 dec_batch.contiguous().view(-1),
             )
             div_loss /= target_tokens
-            #模型改动5：给四个loss设定不同权重******************************************************************
-            weight = [ [1,1.5,1,0.5] , [1,1.5,1,1.5] , [1,1,1,1] , [0.5,0.75,0.5,2] ,
-                      [1,0.75,1,1] , [1,0.75,1,0.5] , [1,0.75,1,0.75] , [1,0.5,1,0.5],
-                      [1,0.5,1.5,0.5]]  #四个loss的不同权重
-            weight_set = 8  #选用哪一套权重，当此值为-1时为初始权重（目前weight_set取2和6时效果较好）
+            # 模型改动5：给四个loss设定不同权重******************************************************************
+            weight = [[1, 1.5, 1, 0.5], [1, 1.5, 1, 1.5], [1, 1, 1, 1], [0.5, 0.75, 0.5, 2],
+                      [1, 0.75, 1, 1], [1, 0.75, 1, 0.5], [
+                          1, 0.75, 1, 0.75], [1, 0.5, 1, 0.5],
+                      [1, 0.5, 1.5, 0.5]]  # 四个loss的不同权重
+            weight_set = 8  # 选用哪一套权重，当此值为-1时为初始权重（目前weight_set取2和6时效果较好）
             if weight_set >= 0 and weight_set < len(weight):
-                loss = weight[weight_set][0]*emo_loss + weight[weight_set][1]*div_loss + weight[weight_set][2]*ctx_loss + weight[weight_set][3]*keyword_loss #新增loss
+                loss = weight[weight_set][0]*emo_loss + weight[weight_set][1]*div_loss + \
+                    weight[weight_set][2]*ctx_loss + \
+                    weight[weight_set][3]*keyword_loss  # 新增loss
             else:
-                loss = emo_loss + 1.5 * div_loss + ctx_loss + keyword_loss #新增loss
-            #模型改动5：给四个loss设定不同权重******************************************************************
+                loss = emo_loss + 1.5 * div_loss + ctx_loss + keyword_loss  # 新增loss
+            # 模型改动5：给四个loss设定不同权重******************************************************************
         else:
             loss = emo_loss + ctx_loss
 
@@ -759,10 +865,12 @@ class SKPT(nn.Module):
         comet_res = {}
 
         if self.is_eval:
-            top_preds = emo_logits.detach().cpu().numpy().argsort()[0][-3:][::-1]
+            top_preds = emo_logits.detach().cpu().numpy().argsort()[
+                0][-3:][::-1]
             top_preds = f"{', '.join([MAP_EMO[pred.item()] for pred in top_preds])}"
             for r in self.rels:
-                txt = [[" ".join(t) for t in tm] for tm in batch[f"{r}_txt"]][0]
+                txt = [[" ".join(t) for t in tm]
+                       for tm in batch[f"{r}_txt"]][0]
                 comet_res[r] = txt
 
         if train:
@@ -830,7 +938,8 @@ class SKPT(nn.Module):
             next_word = next_word.data[0]
 
             ys = torch.cat(
-                [ys, torch.ones(1, 1).long().fill_(next_word).to(config.device)],
+                [ys, torch.ones(1, 1).long().fill_(
+                    next_word).to(config.device)],
                 dim=1,
             ).to(config.device)
             mask_trg = ys.data.eq(config.PAD_idx).unsqueeze(1)
@@ -896,7 +1005,8 @@ class SKPT(nn.Module):
             next_word = next_word.item()
 
             ys = torch.cat(
-                [ys, torch.ones(1, 1).long().fill_(next_word).to(config.device)],
+                [ys, torch.ones(1, 1).long().fill_(
+                    next_word).to(config.device)],
                 dim=1,
             ).to(config.device)
             mask_trg = ys.data.eq(config.PAD_idx).unsqueeze(1)

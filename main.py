@@ -105,8 +105,8 @@ def train(model, train_set, dev_set):
         writer = SummaryWriter(log_dir=config.save_path)
         weights_best = deepcopy(model.state_dict())
         data_iter = make_infinite(train_set)
-        for n_iter in tqdm(range(100)):
-        # for n_iter in tqdm(range(1000000)):
+        # for n_iter in tqdm(range(100)):
+        for n_iter in tqdm(range(1000000)):
             if 'cem' or 'skpt' in config.model:
                 loss, ppl, bce, acc, _, _ = model.train_one_batch(
                     next(data_iter), n_iter

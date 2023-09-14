@@ -48,6 +48,10 @@ parser.add_argument("--schedule", type=float, default=10000)
 parser.add_argument("--woEMO", default=False, action="store_true")
 parser.add_argument("--woCOG", default=False, action="store_true")
 parser.add_argument("--woDiv", default=False, action="store_true")
+
+parser.add_argument("--woS",default=False,action="store_true")
+parser.add_argument("--woKPT",default=False,action="store_true")
+
 parser.add_argument("--large_decoder", action="store_true")
 parser.add_argument("--multitask", action="store_true")
 parser.add_argument("--is_coverage", action="store_true")
@@ -154,6 +158,8 @@ act_loss_weight = args.act_loss_weight
 woEMO = args.woEMO
 woCOG = args.woCOG
 woDiv = args.woDiv
+woS=args.woS
+woKPT=args.woKPT
 
 seed = args.seed
 

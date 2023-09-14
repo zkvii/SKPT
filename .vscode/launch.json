@@ -11,7 +11,7 @@
             "program": "${file}",
             "console": "integratedTerminal",
             "justMyCode": true,
-            // "args": ["--GPU","7","--cuda","--model","cem_en"]
+            // "args": ["--GPU","4","--cuda","--model","skpt"]
             "args": ["--GPU","4","--cuda","--model","skpt"]
         }
     ]

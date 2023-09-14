@@ -261,6 +261,7 @@ class Dataset(data.Dataset):
             item["x_effect_txt"])
         item['target_keywords_text_filtered'] = filter_words_by_pos(
             item["target_text"])
+        # word2vec keywords part
         item['x_intent_filtered'] = self.preprocess(
             item["x_intent_txt_filtered"], cs=True)
         item['x_need_filtered'] = self.preprocess(
@@ -290,7 +291,7 @@ class Dataset(data.Dataset):
             word for words_list in item["context_keywords"] for word in words_list]
         x_affect_keywords = [
             word for words_list in item["x_react_txt"] for word in words_list]
-
+        # expand keywords
         x_intent_keywords = context_keywords + \
             [word for words_list in item["x_intent_txt_filtered"]
                 for word in words_list]+x_affect_keywords
@@ -358,9 +359,13 @@ class Dataset(data.Dataset):
             assert len(x_emo) == len(x_emo_mask)
             return torch.LongTensor(x_emo), torch.LongTensor(x_emo_mask)
         elif keywords:
+            # temp solution for unseen word
+            self.vocab.index_words(arr)      
+            # donot add clstoken
             sequence = [
                 self.vocab.word2index[word] for word in arr
             ]
+            return torch.LongTensor(sequence)
         else:
             x_dial = [config.CLS_idx]
             x_mask = [config.CLS_idx]
@@ -452,7 +457,7 @@ def collate_fn(data):
     def pad_matrix(sequences):
         max_size = max([tensor.size(0) for tensor in sequences])
         padded_tensors = [
-            F.pad(t, (0, max_size-t.shape[0], 0, max_size-t.shape[0]), value=0) for t in sequences]
+            F.pad(t, (0, max_size-t.shape[0], 0, max_size-t.shape[0]), value=1) for t in sequences]
         stacked_tensor = torch.stack(padded_tensors)
         return stacked_tensor
 
@@ -504,12 +509,23 @@ def collate_fn(data):
     d['x_need_matrix'] = pad_matrix(item_info['x_need_keyword_matrix'])
     d['x_want_matrix'] = pad_matrix(item_info['x_want_keyword_matrix'])
     d['x_effect_matrix'] = pad_matrix(item_info['x_effect_keyword_matrix'])
-    # vectorize
-    d['x_intent_keywords'] = merge(item_info['x_intent_keywords'])
-    d['x_need_keywords'] = merge(item_info['x_need_keywords'])
-    d['x_want_keywords'] = merge(item_info['x_want_txt_filtered'])
-    d['x_effect_keywords'] = merge(item_info['x_effect_txt_filtered'])
-
+    
+    d['x_intent_matrix']=d['x_intent_matrix'].to(config.device)
+    d['x_need_matrix']=d['x_need_matrix'].to(config.device)
+    d['x_want_matrix']=d['x_want_matrix'].to(config.device)
+    d['x_effect_matrix']=d['x_effect_matrix'].to(config.device)
+    
+    # vectorize context+cog+aff
+    d['x_intent_keywords'],d['x_intent_keywords_lengths'] = merge(item_info['x_intent_keywords'])
+    d['x_need_keywords'],d['x_need_keywords_lengths'] = merge(item_info['x_need_keywords'])
+    d['x_want_keywords'],d['x_want_keywords_lengths'] = merge(item_info['x_want_keywords'])
+    d['x_effect_keywords'],d['x_effect_keywords_lengths'] = merge(item_info['x_effect_keywords'])
+    
+    d['x_intent_keywords']=d['x_intent_keywords'].to(config.device)
+    d['x_need_keywords']=d['x_need_keywords'].to(config.device)
+    d['x_want_keywords']=d['x_want_keywords'].to(config.device)
+    d['x_effect_keywords']=d['x_effect_keywords'].to(config.device)
+    
     # --------------------------collate senti and keywords---------------------(end)
     # program
     d["target_program"] = item_info["emotion"]

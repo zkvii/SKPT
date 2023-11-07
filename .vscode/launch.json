@@ -8,11 +8,11 @@
             "name": "Python: 当前文件",
             "type": "python",
             "request": "launch",
-            "program": "${file}",
+            "program": "main.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            // "args": ["--GPU","4","--cuda","--model","skpt"]
-            "args": ["--GPU","4","--cuda","--model","skpt"]
+            // "args": ["--GPU","0","--cuda","--model","skpt"]
+            "args": ["--GPU","0","--cuda","--model","cem"]
         }
     ]
 }

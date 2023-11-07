@@ -81,18 +81,22 @@ def get_commonsense(comet, item, data_dict):
 def encode_ctx(vocab, items, data_dict, comet):
     for ctx in tqdm(items):
         ctx_list = []
+        # possibly emotional words; mainly adj and emotion_lexicon
         e_list = []
         for i, c in enumerate(ctx):
             item = process_sent(c)
             ctx_list.append(item)
             vocab.index_words(item)
             ws_pos = nltk.pos_tag(item)  # pos
+            # list of (word, pos)
             for w in ws_pos:
                 w_p = get_wordnet_pos(w[1])
+                # word is not in stop_words and is adj or in emotion_lexicon
                 if w[0] not in stop_words and (
                     w_p == wordnet.ADJ or w[0] in emotion_lexicon
                 ):
                     e_list.append(w[0])
+            # when iterate end then get commonsenses
             if i == len(ctx) - 1:
                 get_commonsense(comet, item, data_dict)
 
@@ -120,6 +124,7 @@ def encode(vocab, files):
         elif k == "emotion":
             data_dict[k] = items
         else:
+            # process for target and emotion_context
             for item in tqdm(items):
                 item = process_sent(item)
                 data_dict[k].append(item)
@@ -177,13 +182,14 @@ def load_dataset():
             pickle.dump([data_tra, data_val, data_tst, vocab], f)
             print("Saved PICKLE")
 
-    for i in range(3):
-        print("[situation]:", " ".join(data_tra["situation"][i]))
-        print("[emotion]:", data_tra["emotion"][i])
-        print("[context]:", [" ".join(u) for u in data_tra["context"][i]])
-        print("[target]:", " ".join(data_tra["target"][i]))
-        print(" ")
+    # for i in range(3):
+    #     print("[situation]:", " ".join(data_tra["situation"][i]))
+    #     print("[emotion]:", data_tra["emotion"][i])
+    #     print("[context]:", [" ".join(u) for u in data_tra["context"][i]])
+    #     print("[target]:", " ".join(data_tra["target"][i]))
+    #     print(" ")
     return data_tra, data_val, data_tst, vocab
+
 
 # 根据词性筛选词
 
@@ -195,13 +201,13 @@ def filter_words_by_pos(words_list):
             filtered_words = []
             for word, pos in pos_tag(words):
                 pos = pos[0].upper()  # 取词性标记的首字母
-                if pos in ['N', 'V', 'J']:  # 名词、动词、形容词的词性标记
+                if pos in ["N", "V", "J"]:  # 名词、动词、形容词的词性标记
                     filtered_words.append(word)
             filtered_words_list.append(filtered_words)
     else:
         for word, pos in pos_tag(words_list):
             pos = pos[0].upper()  # 取词性标记的首字母
-            if pos in ['N', 'V', 'J']:  # 名词、动词、形容词的词性标记
+            if pos in ["N", "V", "J"]:  # 名词、动词、形容词的词性标记
                 filtered_words_list.append(word)
     return filtered_words_list
 
@@ -232,8 +238,7 @@ class Dataset(data.Dataset):
             " ".join(self.data["context"][index][0])
         )
 
-        item["context"], item["context_mask"] = self.preprocess(
-            item["context_text"])
+        item["context"], item["context_mask"] = self.preprocess(item["context_text"])
         item["target"] = self.preprocess(item["target_text"], anw=True)
         item["emotion"], item["emotion_label"] = self.preprocess_emo(
             item["emotion_text"], self.emo_map
@@ -252,24 +257,21 @@ class Dataset(data.Dataset):
 
         # 模型改动2：过滤非动词、名词、形容词的token*****************************************************************************
         # if config.model == "cem_en" or 'skpt':
-        item['context_keywords'] = filter_words_by_pos(item["context_text"])
-        item["x_intent_txt_filtered"] = filter_words_by_pos(
-            item["x_intent_txt"])
+        item["context_keywords"] = filter_words_by_pos(item["context_text"])
+        item["x_intent_txt_filtered"] = filter_words_by_pos(item["x_intent_txt"])
         item["x_need_txt_filtered"] = filter_words_by_pos(item["x_need_txt"])
         item["x_want_txt_filtered"] = filter_words_by_pos(item["x_want_txt"])
-        item["x_effect_txt_filtered"] = filter_words_by_pos(
-            item["x_effect_txt"])
-        item['target_keywords_text_filtered'] = filter_words_by_pos(
-            item["target_text"])
+        item["x_effect_txt_filtered"] = filter_words_by_pos(item["x_effect_txt"])
+        item["target_keywords_text_filtered"] = filter_words_by_pos(item["target_text"])
         # word2vec keywords part
-        item['x_intent_filtered'] = self.preprocess(
-            item["x_intent_txt_filtered"], cs=True)
-        item['x_need_filtered'] = self.preprocess(
-            item["x_need_txt_filtered"], cs=True)
-        item['x_want_filtered'] = self.preprocess(
-            item["x_want_txt_filtered"], cs=True)
-        item['x_effect_filtered'] = self.preprocess(
-            item["x_effect_txt_filtered"], cs=True)
+        item["x_intent_filtered"] = self.preprocess(
+            item["x_intent_txt_filtered"], cs=True
+        )
+        item["x_need_filtered"] = self.preprocess(item["x_need_txt_filtered"], cs=True)
+        item["x_want_filtered"] = self.preprocess(item["x_want_txt_filtered"], cs=True)
+        item["x_effect_filtered"] = self.preprocess(
+            item["x_effect_txt_filtered"], cs=True
+        )
         # 模型改动2：过滤非动词、名词、形容词的token*****************************************************************************
 
         item["x_intent"] = self.preprocess(item["x_intent_txt"], cs=True)
@@ -280,45 +282,68 @@ class Dataset(data.Dataset):
 
         # if config.model == 'cem_en' or 'skpt':
         # ---------------------target_keywords---------------------
-        item['senti'] = self.preprocess_senti(item["context_text"])  # 得到情感极性的值
+        item["senti"] = self.preprocess_senti(item["context_text"])  # 得到情感极性的值
         item["target_keywords"] = self.preprocess(
-            item["target_keywords_text_filtered"], anw=True)  # 得到target的keywords的序号
+            item["target_keywords_text_filtered"], anw=True
+        )  # 得到target的keywords的序号
         # 此处不能直接改原始的item["target"]，因为item["target"]在计算其他loss时有用，不能改变，因此需要新建一个item["target_keywords"]
         # ---------------------target_keywords---------------------(end)
 
         # -----------------------------add graph info-----------------------
         context_keywords = [
-            word for words_list in item["context_keywords"] for word in words_list]
+            word for words_list in item["context_keywords"] for word in words_list
+        ]
         x_affect_keywords = [
-            word for words_list in item["x_react_txt"] for word in words_list]
+            word for words_list in item["x_react_txt"] for word in words_list
+        ]
         # expand keywords
-        x_intent_keywords = context_keywords + \
-            [word for words_list in item["x_intent_txt_filtered"]
-                for word in words_list]+x_affect_keywords
-        x_need_keywords = context_keywords + \
-            [word for words_list in item["x_need_txt_filtered"]
-                for word in words_list]+x_affect_keywords
-        x_want_keywords = context_keywords + \
-            [word for words_list in item["x_want_txt_filtered"]
-                for word in words_list]+x_affect_keywords
-        x_effect_keywords = context_keywords + \
-            [word for words_list in item["x_effect_txt_filtered"]
-                for word in words_list]+x_affect_keywords
+        x_intent_keywords = (
+            context_keywords
+            + [
+                word
+                for words_list in item["x_intent_txt_filtered"]
+                for word in words_list
+            ]
+            + x_affect_keywords
+        )
+        x_need_keywords = (
+            context_keywords
+            + [
+                word
+                for words_list in item["x_need_txt_filtered"]
+                for word in words_list
+            ]
+            + x_affect_keywords
+        )
+        x_want_keywords = (
+            context_keywords
+            + [
+                word
+                for words_list in item["x_want_txt_filtered"]
+                for word in words_list
+            ]
+            + x_affect_keywords
+        )
+        x_effect_keywords = (
+            context_keywords
+            + [
+                word
+                for words_list in item["x_effect_txt_filtered"]
+                for word in words_list
+            ]
+            + x_affect_keywords
+        )
 
-        item['x_intent_keywords'] = self.preprocess(x_intent_keywords,keywords=True)
-        item['x_need_keywords'] = self.preprocess(x_need_keywords,keywords=True)
-        item['x_want_keywords'] = self.preprocess(x_want_keywords,keywords=True)
-        item['x_effect_keywords'] = self.preprocess(x_effect_keywords,keywords=True)
+        item["x_intent_keywords"] = self.preprocess(x_intent_keywords, keywords=True)
+        item["x_need_keywords"] = self.preprocess(x_need_keywords, keywords=True)
+        item["x_want_keywords"] = self.preprocess(x_want_keywords, keywords=True)
+        item["x_effect_keywords"] = self.preprocess(x_effect_keywords, keywords=True)
 
         # graph matrix
-        item['x_intent_keyword_matrix'] = wordlist_to_keyword_vec(
-            x_intent_keywords)
-        item['x_need_keyword_matrix'] = wordlist_to_keyword_vec(
-            x_need_keywords)
-        item['x_want_keyword_matrix'] = wordlist_to_keyword_vec(
-            x_want_keywords)
-        item['x_effect_keyword_matrix'] = wordlist_to_keyword_vec(
-            x_effect_keywords)
+        item["x_intent_keyword_matrix"] = wordlist_to_keyword_vec(x_intent_keywords)
+        item["x_need_keyword_matrix"] = wordlist_to_keyword_vec(x_need_keywords)
+        item["x_want_keyword_matrix"] = wordlist_to_keyword_vec(x_want_keywords)
+        item["x_effect_keyword_matrix"] = wordlist_to_keyword_vec(x_effect_keywords)
 
         # ------------------------------add graph info----------------------(end)
 
@@ -360,11 +385,9 @@ class Dataset(data.Dataset):
             return torch.LongTensor(x_emo), torch.LongTensor(x_emo_mask)
         elif keywords:
             # temp solution for unseen word
-            self.vocab.index_words(arr)      
+            self.vocab.index_words(arr)
             # donot add clstoken
-            sequence = [
-                self.vocab.word2index[word] for word in arr
-            ]
+            sequence = [self.vocab.word2index[word] for word in arr]
             return torch.LongTensor(sequence)
         else:
             x_dial = [config.CLS_idx]
@@ -397,6 +420,7 @@ class Dataset(data.Dataset):
         program[emo_map[emotion]] = 1
         return program, emo_map[emotion]
 
+
 # 得到一个单词的情感值
 
 
@@ -411,6 +435,7 @@ def get_sentiment_scores(word):
     else:
         return None, None, None
 
+
 # 得到一个token列表的情感值，如果词在词典中不存在，情感值为0
 
 
@@ -421,9 +446,9 @@ def replace_tokens_with_sentiments(token_list):
         if pos_score is not None:
             max_score = max(pos_score, neg_score, obj_score)
             if max_score == pos_score:
-                new_value = pos_score*10
+                new_value = pos_score * 10
             elif max_score == neg_score:
-                new_value = (neg_score/3.0)*10
+                new_value = (neg_score / 3.0) * 10
             else:
                 new_value = 0
         else:
@@ -435,9 +460,7 @@ def replace_tokens_with_sentiments(token_list):
 def collate_fn(data):
     def merge(sequences):
         lengths = [len(seq) for seq in sequences]
-        padded_seqs = torch.ones(
-            len(sequences), max(lengths)
-        ).long()  # padding index 1
+        padded_seqs = torch.ones(len(sequences), max(lengths)).long()  # padding index 1
         for i, seq in enumerate(sequences):
             end = lengths[i]
             padded_seqs[i, :end] = seq[:end]
@@ -452,12 +475,15 @@ def collate_fn(data):
             end = lengths[i]
             padded_seqs[i, :end] = seq[:end]
         return padded_seqs, lengths
+
     # ------------------ pad stack matrix ------------
 
     def pad_matrix(sequences):
         max_size = max([tensor.size(0) for tensor in sequences])
         padded_tensors = [
-            F.pad(t, (0, max_size-t.shape[0], 0, max_size-t.shape[0]), value=1) for t in sequences]
+            F.pad(t, (0, max_size - t.shape[0], 0, max_size - t.shape[0]), value=1)
+            for t in sequences
+        ]
         stacked_tensor = torch.stack(padded_tensors)
         return stacked_tensor
 
@@ -465,8 +491,7 @@ def collate_fn(data):
 
     # def pad_keywords(sequences):
 
-    data.sort(key=lambda x: len(x["context"]),
-              reverse=True)  # sort by source seq
+    data.sort(key=lambda x: len(x["context"]), reverse=True)  # sort by source seq
     item_info = {}
     for key in data[0].keys():
         item_info[key] = [d[key] for d in data]
@@ -483,8 +508,7 @@ def collate_fn(data):
     # if config.model == 'cem_en' or 'skpt':
     senti_batch, senti_length = merge_senti(item_info["senti"])
     senti_batch = senti_batch.to(config.device)
-    target_keywords_batch, target_keywords_length = merge(
-        item_info["target_keywords"])
+    target_keywords_batch, target_keywords_length = merge(item_info["target_keywords"])
     target_keywords_batch = target_keywords_batch.to(config.device)
     # --------------------merge senti and keywords--------------(end)
 
@@ -505,27 +529,35 @@ def collate_fn(data):
     d["target_keywords_batch"] = target_keywords_batch
     d["target_keywords_length"] = torch.LongTensor(target_keywords_length)
 
-    d['x_intent_matrix'] = pad_matrix(item_info['x_intent_keyword_matrix'])
-    d['x_need_matrix'] = pad_matrix(item_info['x_need_keyword_matrix'])
-    d['x_want_matrix'] = pad_matrix(item_info['x_want_keyword_matrix'])
-    d['x_effect_matrix'] = pad_matrix(item_info['x_effect_keyword_matrix'])
-    
-    d['x_intent_matrix']=d['x_intent_matrix'].to(config.device)
-    d['x_need_matrix']=d['x_need_matrix'].to(config.device)
-    d['x_want_matrix']=d['x_want_matrix'].to(config.device)
-    d['x_effect_matrix']=d['x_effect_matrix'].to(config.device)
-    
+    d["x_intent_matrix"] = pad_matrix(item_info["x_intent_keyword_matrix"])
+    d["x_need_matrix"] = pad_matrix(item_info["x_need_keyword_matrix"])
+    d["x_want_matrix"] = pad_matrix(item_info["x_want_keyword_matrix"])
+    d["x_effect_matrix"] = pad_matrix(item_info["x_effect_keyword_matrix"])
+
+    d["x_intent_matrix"] = d["x_intent_matrix"].to(config.device)
+    d["x_need_matrix"] = d["x_need_matrix"].to(config.device)
+    d["x_want_matrix"] = d["x_want_matrix"].to(config.device)
+    d["x_effect_matrix"] = d["x_effect_matrix"].to(config.device)
+
     # vectorize context+cog+aff
-    d['x_intent_keywords'],d['x_intent_keywords_lengths'] = merge(item_info['x_intent_keywords'])
-    d['x_need_keywords'],d['x_need_keywords_lengths'] = merge(item_info['x_need_keywords'])
-    d['x_want_keywords'],d['x_want_keywords_lengths'] = merge(item_info['x_want_keywords'])
-    d['x_effect_keywords'],d['x_effect_keywords_lengths'] = merge(item_info['x_effect_keywords'])
-    
-    d['x_intent_keywords']=d['x_intent_keywords'].to(config.device)
-    d['x_need_keywords']=d['x_need_keywords'].to(config.device)
-    d['x_want_keywords']=d['x_want_keywords'].to(config.device)
-    d['x_effect_keywords']=d['x_effect_keywords'].to(config.device)
-    
+    d["x_intent_keywords"], d["x_intent_keywords_lengths"] = merge(
+        item_info["x_intent_keywords"]
+    )
+    d["x_need_keywords"], d["x_need_keywords_lengths"] = merge(
+        item_info["x_need_keywords"]
+    )
+    d["x_want_keywords"], d["x_want_keywords_lengths"] = merge(
+        item_info["x_want_keywords"]
+    )
+    d["x_effect_keywords"], d["x_effect_keywords_lengths"] = merge(
+        item_info["x_effect_keywords"]
+    )
+
+    d["x_intent_keywords"] = d["x_intent_keywords"].to(config.device)
+    d["x_need_keywords"] = d["x_need_keywords"].to(config.device)
+    d["x_want_keywords"] = d["x_want_keywords"].to(config.device)
+    d["x_effect_keywords"] = d["x_effect_keywords"].to(config.device)
+
     # --------------------------collate senti and keywords---------------------(end)
     # program
     d["target_program"] = item_info["emotion"]
@@ -549,8 +581,7 @@ def collate_fn(data):
     return d
 
 
-def prepare_data_seq(batch_size=32):
-
+def prepare_data_seq(batch_size: int):
     pairs_tra, pairs_val, pairs_tst, vocab = load_dataset()
     logging.info("Vocab  {} ".format(vocab.n_words))
 

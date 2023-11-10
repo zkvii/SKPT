@@ -5,7 +5,7 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python: 当前文件",
+            "name": "Python: main",
             "type": "python",
             "request": "launch",
             "program": "main.py",
@@ -13,6 +13,16 @@
             "justMyCode": true,
             // "args": ["--GPU","0","--cuda","--model","skpt"]
             "args": ["--GPU","0","--cuda","--model","cem"]
+        },
+        {
+            "name": "Python: skpt",
+            "type": "python",
+            "request": "launch",
+            "program": "skpt_boot.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            // "args": ["--GPU","0","--cuda","--model","skpt"]
+            "args": ["--GPU","4","--cuda","--model","skpt"]
         }
     ]
 }

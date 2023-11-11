@@ -32,6 +32,15 @@ stop_words = stopwords.words("english")
 
 class Lang:
     def __init__(self, init_index2word: Dict[int, str]):
+        init_index2word={
+            config.UNK_idx: "<UNK>",
+            config.PAD_idx: "<PAD>",
+            config.EOS_idx: "<EOS>",
+            config.SOS_idx: "<SOS>",
+            config.USR_idx: "<USR>",
+            config.SYS_idx: "<SYS>",
+            config.CLS_idx: "<CLS>",
+        }
         self.word2index = {str(v): int(k) for k, v in init_index2word.items()}
         self.word2count = {str(v): 1 for k, v in init_index2word.items()}
         self.index2word = init_index2word
@@ -54,30 +63,22 @@ class Lang:
         return [self.index2word[int(idx)] for idx in seq]
 
 
-def load_dataset() -> Tuple[Dict, Dict, Dict, Lang]:
+def load_dataset() -> Tuple[Dict, Dict, Dict, Lang, Lang]:
+    # global keywords
     data_dir = config.data_dir
     cache_file = f"{data_dir}/dataset_preproc_skpt.p"
     if os.path.exists(cache_file):
         print("LOADING empathetic_dialogue")
         with open(cache_file, "rb") as f:
-            [data_tra, data_val, data_tst, vocab] = pickle.load(f)
+            [data_tra, data_val, data_tst, vocab, keywords_vocab] = pickle.load(f)
     else:
         print("Building dataset...")
         data_tra, data_val, data_tst, vocab = read_files(
-            vocab=Lang(
-                {
-                    config.UNK_idx: "UNK",
-                    config.PAD_idx: "PAD",
-                    config.EOS_idx: "EOS",
-                    config.SOS_idx: "SOS",
-                    config.USR_idx: "USR",
-                    config.SYS_idx: "SYS",
-                    config.CLS_idx: "CLS",
-                }
-            )
+            vocab=Lang(),
+            keywords_vocab=Lang(),
         )
         with open(cache_file, "wb") as f:
-            pickle.dump([data_tra, data_val, data_tst, vocab], f)
+            pickle.dump([data_tra, data_val, data_tst, vocab, keywords_vocab], f)
             print("Saved PICKLE")
 
     # for i in range(3):
@@ -86,10 +87,10 @@ def load_dataset() -> Tuple[Dict, Dict, Dict, Lang]:
     #     print("[context]:", [" ".join(u) for u in data_tra["context"][i]])
     #     print("[target]:", " ".join(data_tra["target"][i]))
     #     print(" ")
-    return data_tra, data_val, data_tst, vocab
+    return data_tra, data_val, data_tst, vocab, keywords_vocab
 
 
-def read_files(vocab: Lang) -> Tuple[Dict, Dict, Dict, Lang]:
+def read_files(vocab: Lang, keywords_vocab: Lang) -> Tuple[Dict, Dict, Dict, Lang]:
     files = DATA_FILES(config.data_dir)
 
     train_files = [np.load(f, allow_pickle=True) for f in files["train"]]
@@ -101,9 +102,9 @@ def read_files(vocab: Lang) -> Tuple[Dict, Dict, Dict, Lang]:
     dev_files = [items[:100] for items in dev_files]
     test_files = [items[:100] for items in test_files]
 
-    data_train = build_dataset(vocab, train_files)
-    data_dev = build_dataset(vocab, dev_files)
-    data_test = build_dataset(vocab, test_files)
+    data_train = build_dataset(vocab, keywords_vocab, train_files)
+    data_dev = build_dataset(vocab, keywords_vocab, dev_files)
+    data_test = build_dataset(vocab, keywords_vocab, test_files)
 
     return data_train, data_dev, data_test, vocab
 
@@ -130,7 +131,9 @@ class CometInference:
         return cls._instance
 
 
-def get_commonsense(vocab: Lang, items: List[List[str]], data_dict: Dict) -> None:
+def get_commonsense(
+    vocab: Lang, keywords_vocab: Lang, items: List[List[str]], data_dict: Dict
+) -> None:
     # Get commonsense for each item
     comet_model = CometInference()
     # Combine items into batches to speed up inference
@@ -147,47 +150,99 @@ def get_commonsense(vocab: Lang, items: List[List[str]], data_dict: Dict) -> Non
             cs_ret = []
             # each cs contains 5 relation commonsense sentences
             for cs in batch_cs_ret:
-                cs_ret.append([process_sent(c) for c in cs])
+                cs_ret.append([word_tokenize_process(c) for c in cs])
             # Add the commonsense sentences to the vocab
+            cs_ret_keywords = []
             for cs in cs_ret:
                 for sent in cs:
                     vocab.index_words(sent)
+
+                    word_pos = nltk.pos_tag(sent)
+                    # word_pos_emotion=word_pair_emotion_transfer(word_pos)
+                    _, word_pos_keywords = word_pair_transfer(word_pos)
+                    cs_keywords = [
+                        pair[0] if pair[1] else "<PAD>" for pair in word_pos_keywords
+                    ]
+
+                    keywords_vocab.index_words(cs_keywords)
+                cs_ret_keywords.append(cs_keywords)
+
             # Add the commonsense sentences to the data dict
             data_dict[relation].extend(cs_ret)
+            data_dict[relation + "_keywords"].extend(cs_ret_keywords)
             # cs_list.append(cs_ret)
 
 
-def build_context(vocab: Lang, contexts: List, data_dict: Dict) -> None:
+def word_pair_transfer(
+    words: Tuple[str, str]
+) -> Tuple[Tuple[str, bool], Tuple[str, bool]]:
+    """transfer word pair to emotion word pair and keywords word pair
+
+    Args:
+        words (Tuple[str, str]): input raw word pair [word,pos]
+
+    Returns:
+        Tuple[Tuple[str,bool], Tuple[str,bool]]: emotion_pair,keywords_pair
+    """
+    words_emotion = []
+    words_keywords = []
+    for pair in words:
+        word_pos = get_wordnet_pos(pair[1])
+        if pair[0] not in stop_words and (
+            word_pos == wordnet.ADJ or pair[0] in emotion_lexicon
+        ):
+            words_emotion.append((pair[0], True))
+        else:
+            words_emotion.append((pair[0], False))
+
+        if pair[0] not in stop_words and (
+            word_pos == wordnet.NOUN
+            or word_pos == wordnet.VERB
+            or word_pos == wordnet.ADJ
+            or pair[0] in emotion_lexicon
+        ):
+            words_keywords.append((pair[0], True))
+        else:
+            words_keywords.append((pair[0], False))
+    return words_emotion, words_keywords
+
+
+def build_context(
+    vocab: Lang, keywords_vocab: Lang, contexts: List, data_dict: Dict
+) -> None:
     # every dialog contains one context
     rel_trigger_ctxs = []
     for ctx in tqdm(contexts):
         ctx_list = []
         emotion_word_list = []
+        keywords_list = []
         # every context contains several sentences
         for i, c in enumerate(ctx):
-            item = process_sent(c)
+            item = word_tokenize_process(c)
             ctx_list.append(item)
             vocab.index_words(item)
 
             ws_pos = nltk.pos_tag(item)
-            for pair in ws_pos:
-                word_pos = get_wordnet_pos(pair[1])
-                if pair[0] not in stop_words and (
-                    word_pos == wordnet.ADJ or pair[0] in emotion_lexicon
-                ):
-                    emotion_word_list.append(pair[0])
-            if i == len(ctx) - 1:
-                rel_trigger_ctxs.append(item)
-                # get commonsense for last sentence
-                # get_commonsense(vocab,item,data_dict)
+            ws_pos_emotion, ws_pos_keywords = word_pair_transfer(ws_pos)
 
+            emotion_word_list = [pair[0] for pair in ws_pos_emotion if pair[1]]
+            keywords_list = [
+                pair[0] if pair[1] else "<PAD>" for pair in ws_pos_keywords
+            ]
+
+            keywords_vocab.index_words(keywords_list)
+
+            if i == len(ctx) - 1:
+                # get commonsense for last sentence
+                rel_trigger_ctxs.append(item)
+        data_dict["keywords_context"].append(keywords_list)
         data_dict["context"].append(ctx_list)
         data_dict["emotion_context"].append(emotion_word_list)
     # get commonsense for all context
-    get_commonsense(vocab, rel_trigger_ctxs, data_dict)
+    get_commonsense(vocab, keywords_vocab, rel_trigger_ctxs, data_dict)
 
 
-def process_sent(sentence: str) -> List[str]:
+def word_tokenize_process(sentence: str) -> List[str]:
     """standardlize sentence using nltk word_tokenize
     Args:
         sentence (str): input sentence
@@ -202,12 +257,14 @@ def process_sent(sentence: str) -> List[str]:
     return sentence
 
 
-def build_dataset(vocab: Lang, corpus: List[List[str]]) -> Dataset:
+def build_dataset(
+    vocab: Lang, keywords_vocab: Lang, corpus: List[List[str]]
+) -> Dataset:
     # corpus:[array[context],array[target],array[emotion],array[situation]
     def standardize(sents: List[str]) -> List[List[str]]:
         collect_sents = []
         for item in tqdm(sents):
-            item = process_sent(item)
+            item = word_tokenize_process(item)
             vocab.index_words(item)
             collect_sents.append(item)
         return collect_sents
@@ -218,18 +275,24 @@ def build_dataset(vocab: Lang, corpus: List[List[str]]) -> Dataset:
         "emotion": [],
         "situation": [],
         "emotion_context": [],
+        "keywords_context": [],
         "xWant": [],
         "xNeed": [],
         "xIntent": [],
         "xEffect": [],
         "xReact": [],
+        "xWant_keywords": [],
+        "xNeed_keywords": [],
+        "xIntent_keywords": [],
+        "xEffect_keywords": [],
+        "xReact_keywords": [],
     }
 
     contexts = corpus[0]
     targets = corpus[1]
     emotions = corpus[2]
     situations = corpus[3]
-    build_context(vocab, contexts, data_dict)
+    build_context(vocab, keywords_vocab, contexts, data_dict)
     data_dict["emotion"] = emotions
     data_dict["situation"] = standardize(situations)
     data_dict["target"] = standardize(targets)
@@ -297,22 +360,21 @@ class EMDataset(Dataset):
     """get item"""
 
     def __getitem__(self, index) -> Dict:
-        
         """
-            item:DICT[
-                "context_text":List[str],
-                "emotion_text":List[str],
-                "situation_text":List[str],
-                "target_text":List[str],
-                "emotion_context_text":List[str],
-                "context":torch.Tensor,
-                "context_mask":torch.Tensor,
-                "emotion_context":torch.Tensor,
-                "target":torch.Tensor,
-                "target_lengths":torch.Tensor,
-                "context_sentiment_score":List[float],
-                "emotion_tensity_score":torch.Tensor
-            ]
+        item:DICT[
+            "context_text":List[str],
+            "emotion_text":List[str],
+            "situation_text":List[str],
+            "target_text":List[str],
+            "emotion_context_text":List[str],
+            "context":torch.Tensor,
+            "context_mask":torch.Tensor,
+            "emotion_context":torch.Tensor,
+            "target":torch.Tensor,
+            "target_lengths":torch.Tensor,
+            "context_sentiment_score":List[float],
+            "emotion_tensity_score":torch.Tensor
+        ]
         """
         item = {}
         item["context_text"] = self.data["context"][index]
@@ -322,23 +384,38 @@ class EMDataset(Dataset):
         item["emotion_context_text"] = self.data["emotion_context"][index]
 
         # to tensor
-        item["context"], item["context_mask"] = self.tensorized_context(
+        item["context"], item["context_mask"] = self.tensorize_context(
             item["context_text"]
         )
-        temp_context=self.vocab.decode_sequence(item["context"])
+        temp_context = self.vocab.decode_sequence(item["context"])
         # care only last utterance
-        item['context_sentiment_score'] = [self.SA.polarity_scores(word)["compound"] for word in temp_context]
-        
+        item["context_sentiment_score"] = [
+            self.SA.polarity_scores(word)["compound"] for word in temp_context
+        ]
+
         assert len(item["context"]) == len(item["context_sentiment_score"])
         # item["emotion_tensity_score"] = torch.FloatTensor(
         #     self.SA.polarity_scores(item["context_text"][-1])["compound"]
         # )
-        
-        item['con']
+        item["target"] = self.tensorize_sequence(item["target_text"])
+        item["emotion"], item["emotion_label"] = self.tensorize_emo(
+            item["emotion_text"]
+        )
+        # emotion_context is emotional words in context
+        (
+            item["emotion_context_vec"],
+            item["emotion_context_vec_mask"],
+        ) = self.tensorize_context(item["emotion_context_text"])
+        # item['emotion_context'],item['emotion_context_mask']=self.
 
         return item
 
-    def tensorized_sequence(self, text: List[str]) -> Tuple[torch.Tensor, torch.Tensor]:
+    def tensorize_emo(self, emotion):
+        emo_vec = [0] * len(self.emo_map)
+        emo_vec[self.emo_map[emotion]] = 1
+        return emo_vec, self.emo_map[emotion]
+
+    def tensorize_target(self, text: List[str]) -> torch.Tensor:
         """tensorized the sentence
 
         Args:
@@ -351,9 +428,9 @@ class EMDataset(Dataset):
         for word in text:
             x.append(self.vocab.word2index.get(word, config.UNK_idx))
         x.append(config.EOS_idx)
-        return torch.LongTensor(x), torch.LongTensor([1] * len(x))
+        return torch.LongTensor(x)
 
-    def tensorized_context(
+    def tensorize_context(
         self, text: List[List[str]]
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """tensorized the sentence
@@ -376,7 +453,7 @@ class EMDataset(Dataset):
         assert len(x_dialog) == len(x_mask)
         return torch.LongTensor(x_dialog), torch.LongTensor(x_mask)
 
-    def tensorized_context_dialog(
+    def tensorize_context_dialog(
         self, text: List[List[str]]
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """tensorized the sentence

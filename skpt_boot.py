@@ -107,7 +107,7 @@ def train(model, train_set, dev_set):
         data_iter = make_infinite(train_set)
         # for n_iter in tqdm(range(100)):
         for n_iter in tqdm(range(1000000)):
-            if 'cem' or 'skpt' in config.model:
+            if "cem" or "skpt" in config.model:
                 loss, ppl, bce, acc, _, _ = model.train_one_batch(
                     next(data_iter), n_iter
                 )
@@ -176,14 +176,14 @@ def test(model, test_set):
 def main():
     set_seed()  # for reproducibility
 
-    train_set, dev_set, test_set, vocab, dec_num = prepare_data_loader(
+    train_set, dev_set, test_set, vocab, keywords_vocab, dec_num = prepare_data_loader(
         batch_size=config.batch_size
     )
-    
+
     model = make_model(vocab, dec_num)
 
     if config.test:
-        test_set=test_set[:10]
+        test_set = test_set[:10]
         test(model, test_set)
     else:
         weights_best = train(model, train_set, dev_set)

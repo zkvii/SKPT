@@ -81,11 +81,11 @@ class CometMulti:
         use_task_specific_params(self.model, "summarization")
         self.model.zero_grad()
 
-    def generate(self, input_events: List[str], rel):
+    def generate(self, input_events: List[str], rel)->List[List[str]]:
         # 每次推理都根据批处理大小返回结果
         
-        if len(input_events) != self.batch_size:
-            return
+        # if len(input_events) != self.batch_size:
+        #     return
 
         queries = ["{} {} [GEN]".format(event, rel) for event in input_events]
 

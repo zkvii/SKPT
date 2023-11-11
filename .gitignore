@@ -181,9 +181,10 @@ pyrightconfig.json
 data/**
 map/**
 save/**
-
+vectors
 vectors/**
-
+vectors/*.txt
 *.sh
 *.log
 *.tsv
+notebooks

@@ -22,7 +22,8 @@
             "console": "integratedTerminal",
             "justMyCode": true,
             // "args": ["--GPU","0","--cuda","--model","skpt"]
-            "args": ["--GPU","4","--cuda","--model","skpt"]
+            "args": ["--GPU","4","--cuda","--model","skpt","--device","xpu"]
+            
         }
     ]
 }

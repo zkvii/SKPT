@@ -2,7 +2,7 @@ import torch
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 from typing import List
 from more_itertools import chunked
-
+import intel_extension_for_pytorch as ipex
 def chunks(lst, n):
     """Yield successive n-sized chunks from lst."""
     for i in range(0, len(lst), n):

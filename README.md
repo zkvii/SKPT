@@ -1,5 +1,5 @@
 # CEM
-> The official implementation for the paper *SKPT: Incorporating Keyword Path Tracking into Empathetic Generation*.
+> The official implementation for the paper *SKPT: Incorporating Keyword Path TracKing into Empathetic Generation*.
 
 <!-- <img src="https://img.shields.io/badge/Venue-AAAI--22-278ea5" alt="venue"/> <img src="https://img.shields.io/badge/Status-Accepted-success" alt="status"/> <img src="https://img.shields.io/badge/Issues-Welcome-red"> <img src="https://img.shields.io/badge/Last%20Updated-2022--03--19-2D333B" alt="update"/> -->
 

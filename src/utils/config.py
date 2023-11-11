@@ -33,6 +33,8 @@ parser.add_argument("--save_path", type=str, default="save/test")
 parser.add_argument("--model_path", type=str, default="save/test")
 parser.add_argument("--save_path_dataset", type=str, default="save/")
 parser.add_argument("--cuda", default=False, action="store_true")
+parser.add_argument("--device",type=str,default='cpu')
+
 
 parser.add_argument("--pointer_gen", action="store_true")
 parser.add_argument("--oracle", action="store_true")
@@ -120,7 +122,7 @@ vae = args.vae
 eq6_loss = args.eq6_loss
 vader_loss = args.vader_loss
 init_emo_emb = args.init_emo_emb
-device = torch.device("cuda" if args.cuda else "cpu")
+device = torch.device("cuda" if args.cuda else args.device)
 pointer_gen = args.pointer_gen
 is_coverage = args.is_coverage
 use_oov_emb = args.use_oov_emb

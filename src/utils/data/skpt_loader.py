@@ -161,15 +161,15 @@ def get_commonsense(
             # Add the commonsense sentences to the vocab
             cs_ret_keywords = []
             for cs in cs_ret:
-                cs_keywords=[]
+                cs_keywords = []
                 for sent in cs:
                     vocab.index_words(sent)
 
                     word_pos = nltk.pos_tag(sent)
                     # word_pos_emotion=word_pair_emotion_transfer(word_pos)
                     _, word_pos_keywords = word_pair_transfer(word_pos)
-                    sentence_keywords=[
-                         pair[0] if pair[1] else "<PAD>" for pair in word_pos_keywords
+                    sentence_keywords = [
+                        pair[0] if pair[1] else "<PAD>" for pair in word_pos_keywords
                     ]
                     cs_keywords.append(sentence_keywords)
 
@@ -223,8 +223,8 @@ def build_context(
     rel_trigger_ctxs = []
     for ctx in tqdm(contexts):
         ctx_list = []
-        keywords_list=[]
-        emotion_words_list=[]
+        keywords_list = []
+        emotion_words_list = []
         # every context contains several sentences
         for i, c in enumerate(ctx):
             item = word_tokenize_process(c)
@@ -235,13 +235,10 @@ def build_context(
             ws_pos_emotion, ws_pos_keywords = word_pair_transfer(ws_pos)
 
             emotion_words = [pair[0] for pair in ws_pos_emotion if pair[1]]
-            keywords=[
-                pair[0] if pair[1] else "<PAD>" for pair in ws_pos_keywords
-            ]
-
+            keywords = [pair[0] if pair[1] else "<PAD>" for pair in ws_pos_keywords]
 
             keywords_vocab.index_words(keywords)
-            
+
             emotion_words_list.append(emotion_words)
             keywords_list.append(keywords)
 
@@ -399,12 +396,12 @@ class EMDataset(Dataset):
         item["target_text"] = self.data["target"][index]
         item["emotion_context_text"] = self.data["emotion_context"][index]
         item["keywords_context_text"] = self.data["keywords_context"][index]
-        
-        item["xWant_text"] = self.data["xWant_keywords"][index]
-        item["xNeed_text"] = self.data["xNeed_keywords"][index]
-        item["xIntent_text"] = self.data["xIntent_keywords"][index]
-        item["xEffect_text"] = self.data["xEffect_keywords"][index]
-        item["xReact_text"] = self.data["xReact_keywords"][index]
+
+        item["xWant_keywords_text"] = self.data["xWant_keywords"][index]
+        item["xNeed_keywords_text"] = self.data["xNeed_keywords"][index]
+        item["xIntent_keywords_text"] = self.data["xIntent_keywords"][index]
+        item["xEffect_keywords_text"] = self.data["xEffect_keywords"][index]
+        item["xReact_keywords_text"] = self.data["xReact_keywords"][index]
 
         # to tensor
         item["context"], item["context_mask"] = self.tensorize_context(
@@ -434,11 +431,77 @@ class EMDataset(Dataset):
         item["keywords_vec"], item["keywords_vec_mask"] = self.tensorize_context(
             item["keywords_context_text"]
         )
+
+        for rel in relations[:-1]:
+            item[rel + "_vec"], item[rel + "_vec_mask"] = self.tensorize_cog(
+                item[rel + "_keywords_text"], item["xReact_keywords_text"]
+            )
+        # item["xWant_vec"], item["xWant_vec_mask"] = self.tensorize_cog(
+        #     item["xWant_keywords_text"], item["xReact_keywords_text"]
+        # )
+        # item["xNeed_vec"], item["xNeed_vec_mask"] = self.tensorize_cog(
+        #     item["xNeed_keywords_text"], item["xReact_keywords_text"]
+        # )
+        # item["xIntent_vec"], item["xIntent_vec_mask"] = self.tensorize_cog(
+        #     item["xIntent_keywords_text"], item["xReact_keywords_text"]
+        # )
+        # item["xEffect_vec"], item["xEffect_vec_mask"] = self.tensorize_cog(
+        #     item["xEffect_keywords_text"], item["xReact_keywords_text"]
+        # )
+        self.pad_item(item)
         # item['emotion_context'],item['emotion_context_mask']=self.
-        assert item['keywords_vec'].shape[0]==item['context'].shape[0]
-        
-        
+        assert item["keywords_vec"].shape[0] == item["context"].shape[0]
+
+
         return item
+
+    def pad_item(self, item: Dict):
+        """pad sequence to max ext length
+
+        Args:
+            item (Dict): item dict
+
+        """
+        max_length = max(
+            item["xWant_vec"].shape[0],
+            item["xNeed_vec"].shape[0],
+            item["xIntent_vec"].shape[0],
+            item["xEffect_vec"].shape[0],
+        )
+        for rel in relations[:-1]:
+            item[rel + "_vec"] = F.pad(
+                item[rel + "_vec"],
+                (0, max_length - item[rel + "_vec"].shape[0]),
+                value=config.PAD_idx,
+            )
+            item[rel + "_vec_mask"] = F.pad(
+                item[rel + "_vec_mask"],
+                (0, max_length - item[rel + "_vec_mask"].shape[0]),
+                value=0,
+            )
+
+        
+        
+        
+
+    def tensorize_cog(
+        self, cog_word_list: List[List[str]], aff_word_list: List[List[str]]
+    ) -> torch.Tensor:
+        """Tensorize the cog with aff
+
+        Args:
+            cog_word_list (List[List[str]]): List of 5 sentences of one cog
+            aff_word_list (List[List[str]]): List of 5 sentences of one aff
+
+        Returns:
+            torch.Tensor: cog+aff tensor
+        """
+        cog_ext = cog_word_list + aff_word_list
+        cog_words = [word for sent in cog_ext for word in sent if word != "<PAD>"]
+        cog_ext_idx = [
+            self.vocab.word2index.get(word, config.UNK_idx) for word in cog_words
+        ]
+        return torch.LongTensor(cog_ext_idx), torch.LongTensor([1] * len(cog_ext_idx))
 
     def tensorize_emo(self, emotion):
         emo_vec = [0] * len(self.emo_map)
@@ -517,9 +580,11 @@ class EMDataset(Dataset):
         )
         return len(self.data["target"])
 
+
 def print_sentence(sentence: List[List[str]]) -> None:
-    for i,sent in enumerate(sentence):
+    for i, sent in enumerate(sentence):
         print(f"sent {i}: {sent}")
+
 
 def collate_fn(data: List) -> Dict:
     def pad_sequence(sequences: List[List[int]]) -> Tuple[List[int], List[int]]:

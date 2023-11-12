@@ -409,9 +409,10 @@ class EMDataset(Dataset):
         )
         temp_context = self.vocab.decode_sequence(item["context"])
         # care only last utterance
-        item["context_sentiment_score"] = [
-            self.SA.polarity_scores(word)["compound"] for word in temp_context
-        ]
+        # item["context_sentiment_score"] = [
+        #     self.SA.polarity_scores(word)["compound"] for word in temp_context
+        # ]
+        item['context_sentiment_score']=get_word_sentiments(" ".join(temp_context))
 
         assert len(item["context"]) == len(item["context_sentiment_score"])
         # item["emotion_tensity_score"] = torch.FloatTensor(
@@ -452,7 +453,6 @@ class EMDataset(Dataset):
         # item['emotion_context'],item['emotion_context_mask']=self.
         assert item["keywords_vec"].shape[0] == item["context"].shape[0]
 
-
         return item
 
     def pad_item(self, item: Dict):
@@ -479,10 +479,6 @@ class EMDataset(Dataset):
                 (0, max_length - item[rel + "_vec_mask"].shape[0]),
                 value=0,
             )
-
-        
-        
-        
 
     def tensorize_cog(
         self, cog_word_list: List[List[str]], aff_word_list: List[List[str]]
@@ -581,6 +577,57 @@ class EMDataset(Dataset):
         return len(self.data["target"])
 
 
+def get_sentiment(word:str, pos:str)->float:
+    """Get the sentiment score for a given word and part of speech
+
+    Args:
+        word (str): word
+        pos (str): part of speech
+
+    Returns:
+        float: return sentiment score
+    """
+    # Get the sentiment scores for a given word and part of speech
+    synsets = list(swn.senti_synsets(word, pos))
+    if synsets:
+        # Use the average sentiment scores of all the synsets
+        sentiment = sum(s.pos_score() - s.neg_score() for s in synsets) / len(synsets)
+        return sentiment
+    else:
+        return 0.0
+
+
+def get_word_sentiments(sentence:str)->List[Tuple[str,float]]:
+    """Get the sentiment scores for each word in a sentence
+
+    Args:
+        sentence (str): input text sentence
+
+    Returns:
+        List[Tuple[str,float]]: List of (word, sentiment) pairs
+    """
+    # Tokenize the sentence and get the part of speech for each word
+    words = nltk.word_tokenize(sentence)
+    pos_tags = pos_tag(words)
+
+    # Map Penn Treebank POS tags to WordNet POS tags
+    pos_mapping = {"N": "n", "V": "v", "R": "r", "J": "a"}
+    # word_sentiments = []
+    sentiments_vec=[]
+    for word, pos in pos_tags:
+        # Convert Penn Treebank POS tags to WordNet POS tags
+        word = word.lower()  # Convert the word to lowercase
+        word_pos = pos[0].upper() if pos else 'N'  # Use 'N' as a default if pos is not available
+        word_pos = pos_mapping.get(word_pos, 'n')
+
+
+        # Get the sentiment score for the word
+        sentiment = get_sentiment(word, word_pos) if word.isalnum() else 0.0
+        # word_sentiments.append((word, sentiment))
+        sentiments_vec.append(sentiment)
+    return torch.FloatTensor(sentiments_vec)
+
+
 def print_sentence(sentence: List[List[str]]) -> None:
     for i, sent in enumerate(sentence):
         print(f"sent {i}: {sent}")
@@ -602,6 +649,22 @@ def collate_fn(data: List) -> Dict:
             end = lengths[i]
             padded_seqs[i, :end] = seq[:end]
         return padded_seqs, lengths
+    
+    def pad_float_sequence(sequences: List[List[float]]) -> Tuple[List[float], List[int]]:
+        """
+        padding sequences with 0.0 to max length
+        Args:
+            sequences (List[List[int]]): list of sequences
+        Returns:
+            Tuple[List[int], List[int]]: padded sequences and sequence lengths
+
+        """
+        lengths = [len(seq) for seq in sequences]
+        padded_seqs = torch.zeros(len(sequences), max(lengths)).float()
+        for i, seq in enumerate(sequences):
+            end = lengths[i]
+            padded_seqs[i, :end] = torch.FloatTensor(seq[:end])
+        return padded_seqs, lengths
 
     # sort data by context length in descending order
     data.sort(key=lambda x: len(x["context"]), reverse=True)
@@ -610,8 +673,9 @@ def collate_fn(data: List) -> Dict:
 
     input_batch, input_lengths = pad_sequence(item_info["context"])
     mask_input, mask_input_lengths = pad_sequence(item_info["context_mask"])
-    emotion_batch, emotion_lengths = pad_sequence(item_info["emotion_context"])
+    emotion_batch, emotion_lengths = pad_sequence(item_info["emotion_context_vec"])
 
+    context_sentiment_batch,_=pad_float_sequence(item_info["context_sentiment_score"])
     # Target
     target_batch, target_lengths = pad_sequence(item_info["target"])
 
@@ -619,12 +683,13 @@ def collate_fn(data: List) -> Dict:
     batch_data = {}
     batch_data["input_batch"] = input_batch
     batch_data["input_lengths"] = torch.LongTensor(input_lengths)
-
     batch_data["mask_input"] = mask_input
 
-    batch_data["emotion_batch"] = emotion_batch
+    batch_data["emotion_context_batch"] = emotion_batch
+    batch_data['context_sentiment_batch']=context_sentiment_batch
 
     batch_data["target_batch"] = target_batch
     batch_data["target_lengths"] = torch.LongTensor(target_lengths)
 
+    
     return batch_data

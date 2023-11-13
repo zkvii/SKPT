@@ -176,20 +176,21 @@ def test(model, test_set):
 def main():
     set_seed()  # for reproducibility
 
+    # build data loader
     train_set, dev_set, test_set, vocab, keywords_vocab, dec_num = prepare_data_loader(
         batch_size=config.batch_size
     )
 
-    model = make_model(vocab, dec_num)
+    # model = make_model(vocab, dec_num)
 
-    if config.test:
-        test_set = test_set[:10]
-        test(model, test_set)
-    else:
-        weights_best = train(model, train_set, dev_set)
-        model.epoch = 1
-        model.load_state_dict({name: weights_best[name] for name in weights_best})
-        test(model, test_set)
+    # if config.test:
+    #     test_set = test_set[:10]
+    #     test(model, test_set)
+    # else:
+    #     weights_best = train(model, train_set, dev_set)
+    #     model.epoch = 1
+    #     model.load_state_dict({name: weights_best[name] for name in weights_best})
+    #     test(model, test_set)
 
 
 if __name__ == "__main__":

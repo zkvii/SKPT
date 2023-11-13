@@ -751,6 +751,84 @@ class SKPT(nn.Module):
             
             
             
+        
+        # sentiment sent_enc + pooled_graph_cogs
+        
+
+        # -----------------------compute_keyword_graph----------------(end)
+
+        # 5个，每个都是batchsize*1*300
+        # cls_tokens = [c[:, 0].unsqueeze(1) for c in cs_outputs]
+
+        # # Shape: batch_size * 1 * 300
+        # cog_cls = cls_tokens[:-1]  # 4个，包含前四个cls_tokens的值
+        # # batch_size * 1 * 300
+        # emo_cls = torch.mean(cs_outputs[-1], dim=1).unsqueeze(1)
+
+        # # 模型改动3：从senti_encoder得到的senti output，将结果取cls然后与emo output相加****************************************************
+        # senti_cls = torch.mean(senti_outputs, dim=1).unsqueeze(
+        #     1)  # batch_size * 1 * 300
+        # emo_cls += senti_cls  # 把senti的cls和emo的cls相加
+        # # 模型改动3：从senti_encoder得到的senti output，将结果取cls然后与emo output相加****************************************************
+
+
+        # return src_mask, cog_ref_ctx, emo_logits
+        # Commonsense relations
+        # cs_embs = []
+        # cs_masks = []
+        # cs_outputs = []
+        # for r in self.rels:
+        #     if r != "x_react":
+        #         # 模型改动1：把x_react直接连接在其他4个后面*****************************************************************************
+        #         # 把x_react直接连接在其他4个后面，构造出新的输入
+        #         new_batch = torch.cat((batch[r], batch['x_react']), dim=1)
+        #         emb = self.embedding(new_batch).to(config.device)
+        #         # emb = self.embedding(batch[r]).to(config.device)
+        #         mask = new_batch.data.eq(
+        #             config.PAD_idx).unsqueeze(1)  # batchsize*1*x
+        #         # mask = batch[r].data.eq(config.PAD_idx).unsqueeze(1)
+        #         enc_output = self.cog_encoder(emb, mask)  # batchsize*x*300
+        #         # 模型改动1：把x_react直接连接在其他4个后面*****************************************************************************
+        #     else:
+        #         # batchsize*x*300(x是commonsense序列的长度，在5个rels里不同)
+        #         emb = self.embedding(batch[r]).to(config.device)
+        #         mask = batch[r].data.eq(
+        #             config.PAD_idx).unsqueeze(1)  # batchsize*1*x
+        #         enc_output = self.emo_encoder(emb, mask)  # batchsize*x*300
+        #     # cs_embs.append(emb)
+        #     # cs_masks.append(mask)
+        #     cs_outputs.append(enc_output)
+
+        # Emotion
+        # if not config.woEMO:
+        #     emo_concat = torch.cat(
+        #         [enc_outputs, emo_cls.expand(dim)], dim=-1)  # batch_size*92*600
+        #     emo_ref_ctx = self.emo_ref_encoder(
+        #         emo_concat, src_mask)  # batch_size*92*300
+        #     emo_logits = self.emo_lin(emo_ref_ctx[:, 0])  # batch_size*32
+        # else:
+        #     emo_logits = self.emo_lin(enc_outputs[:, 0])
+
+        # # Cognition
+        # cog_outputs = []
+        # for cls in cog_cls:
+        #     cog_concat = torch.cat(
+        #         [enc_outputs, cls.expand(dim)], dim=-1)  # batch_size*92*600
+        #     cog_concat_enc = self.cog_ref_encoder(
+        #         cog_concat, src_mask)  # batch_size*92*300
+        #     cog_outputs.append(cog_concat_enc)  # 因为Cognition有四个，所以append
+
+        # if config.woCOG:
+        #     cog_ref_ctx = emo_ref_ctx
+        # else:
+        #     if config.woEMO:
+        #         cog_ref_ctx = torch.cat(cog_outputs, dim=-1)
+        #     else:
+        #         cog_ref_ctx = torch.cat(
+        #             cog_outputs + [emo_ref_ctx], dim=-1)  # batch_size*92*1500
+        #     cog_contrib = nn.Sigmoid()(cog_ref_ctx)  # batch_size*92*1500
+        #     cog_ref_ctx = cog_contrib * cog_ref_ctx
+        #     cog_ref_ctx = self.cog_lin(cog_ref_ctx)  # batch_size*92*300
 
     def train_one_batch(self, batch, iter, train=True):
         (
@@ -763,11 +841,10 @@ class SKPT(nn.Module):
             _,
             _,
         ) = get_input_from_batch(batch)
-        # enc_batch=
-        # dec_batch, _, _, _, _ = get_output_from_batch(batch)
+        dec_batch, _, _, _, _ = get_output_from_batch(batch)
 
-        # dec_keywords_batch, _, _, _, _ = get_keywords_output_from_batch(
-        #     batch)  # 提取了keywords的dec batch
+        dec_keywords_batch, _, _, _, _ = get_keywords_output_from_batch(
+            batch)  # 提取了keywords的dec batch
 
         if config.noam:
             self.optimizer.optimizer.zero_grad()
@@ -779,9 +856,6 @@ class SKPT(nn.Module):
             src_mask, ctx_output, emo_logits = self.forward(batch)
 
         # Decode
-        enc_batch= batch["input_batch"]
-        dec_batch= batch["target_batch"]
-        dec_keywords_batch= batch["target_keywords_batch"]
         sos_token = (
             torch.LongTensor([config.SOS_idx] * enc_batch.size(0))
             .unsqueeze(1)

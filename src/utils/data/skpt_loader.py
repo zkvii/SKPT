@@ -33,13 +33,13 @@ stop_words = stopwords.words("english")
 class Lang:
     def __init__(self):
         init_index2word = {
-            config.UNK_idx: "<UNK>",
-            config.PAD_idx: "<PAD>",
-            config.EOS_idx: "<EOS>",
-            config.SOS_idx: "<SOS>",
-            config.USR_idx: "<USR>",
-            config.SYS_idx: "<SYS>",
-            config.CLS_idx: "<CLS>",
+            config.UNK_idx: "UNK",
+            config.PAD_idx: "PAD",
+            config.EOS_idx: "EOS",
+            config.SOS_idx: "SOS",
+            config.USR_idx: "USR",
+            config.SYS_idx: "SYS",
+            config.CLS_idx: "CLS",
         }
         self.word2index = {str(v): int(k) for k, v in init_index2word.items()}
         self.word2count = {str(v): 1 for k, v in init_index2word.items()}
@@ -105,9 +105,9 @@ def read_files(
     test_files = [np.load(f, allow_pickle=True) for f in files["test"]]
 
     # test 1000
-    train_files = [items[:100] for items in train_files]
-    dev_files = [items[:100] for items in dev_files]
-    test_files = [items[:100] for items in test_files]
+    # train_files = [items[:100] for items in train_files]
+    # dev_files = [items[:100] for items in dev_files]
+    # test_files = [items[:100] for items in test_files]
 
     data_train = build_dataset(vocab, keywords_vocab, train_files)
     data_dev = build_dataset(vocab, keywords_vocab, dev_files)
@@ -169,7 +169,7 @@ def get_commonsense(
                     # word_pos_emotion=word_pair_emotion_transfer(word_pos)
                     _, word_pos_keywords = word_pair_transfer(word_pos)
                     sentence_keywords = [
-                        pair[0] if pair[1] else "<PAD>" for pair in word_pos_keywords
+                        pair[0] if pair[1] else "PAD" for pair in word_pos_keywords
                     ]
                     cs_keywords.append(sentence_keywords)
 
@@ -216,6 +216,32 @@ def word_pair_transfer(
     return words_emotion, words_keywords
 
 
+def build_target(vocab: Lang, keywords_vocab: Lang, targets: List, data_dict: Dict):
+    """build target vocab and target data_dict
+
+    Args:
+        vocab (Lang): _description_
+        keywords_vocab (Lang): _description_
+        targets (List): _description_
+        data_dict (Dict): _description_
+    """
+    for target in tqdm(targets):
+        item = word_tokenize_process(target)
+        vocab.index_words(item)
+
+        ws_pos = nltk.pos_tag(item)
+        ws_pos_emotion, ws_pos_keywords = word_pair_transfer(ws_pos)
+
+        emotion_words = [pair[0] for pair in ws_pos_emotion if pair[1]]
+        keywords = [pair[0] if pair[1] else "PAD" for pair in ws_pos_keywords]
+
+        keywords_vocab.index_words(keywords)
+
+        data_dict["target"].append(item)
+        data_dict["emotion_target"].append(emotion_words)
+        data_dict["keywords_target"].append(keywords)
+
+
 def build_context(
     vocab: Lang, keywords_vocab: Lang, contexts: List, data_dict: Dict
 ) -> None:
@@ -235,7 +261,7 @@ def build_context(
             ws_pos_emotion, ws_pos_keywords = word_pair_transfer(ws_pos)
 
             emotion_words = [pair[0] for pair in ws_pos_emotion if pair[1]]
-            keywords = [pair[0] if pair[1] else "<PAD>" for pair in ws_pos_keywords]
+            keywords = [pair[0] if pair[1] else "PAD" for pair in ws_pos_keywords]
 
             keywords_vocab.index_words(keywords)
 
@@ -285,7 +311,9 @@ def build_dataset(
         "emotion": [],
         "situation": [],
         "emotion_context": [],
+        "emotion_target": [],
         "keywords_context": [],
+        "keywords_target": [],
         "xWant": [],
         "xNeed": [],
         "xIntent": [],
@@ -302,10 +330,12 @@ def build_dataset(
     targets = corpus[1]
     emotions = corpus[2]
     situations = corpus[3]
+    # context
     build_context(vocab, keywords_vocab, contexts, data_dict)
+    # target
+    build_target(vocab, keywords_vocab, targets, data_dict)
     data_dict["emotion"] = emotions
     data_dict["situation"] = standardize(situations)
-    data_dict["target"] = standardize(targets)
 
     assert (
         len(data_dict["context"])
@@ -387,6 +417,7 @@ class EMDataset(Dataset):
             "target_lengths":torch.Tensor,
             "context_sentiment_score":List[float],
             "emotion_tensity_score":torch.Tensor
+            ...
         ]
         """
         item = {}
@@ -396,6 +427,8 @@ class EMDataset(Dataset):
         item["target_text"] = self.data["target"][index]
         item["emotion_context_text"] = self.data["emotion_context"][index]
         item["keywords_context_text"] = self.data["keywords_context"][index]
+        item["emotion_target_text"] = self.data["emotion_target"][index]
+        item["keywords_target_text"] = self.data["keywords_target"][index]
 
         item["xWant_keywords_text"] = self.data["xWant_keywords"][index]
         item["xNeed_keywords_text"] = self.data["xNeed_keywords"][index]
@@ -412,13 +445,12 @@ class EMDataset(Dataset):
         # item["context_sentiment_score"] = [
         #     self.SA.polarity_scores(word)["compound"] for word in temp_context
         # ]
-        item['context_sentiment_score']=get_word_sentiments(" ".join(temp_context))
+        item["context_sentiment_score"] = get_word_sentiments(" ".join(temp_context))
 
-        assert len(item["context"]) == len(item["context_sentiment_score"])
         # item["emotion_tensity_score"] = torch.FloatTensor(
         #     self.SA.polarity_scores(item["context_text"][-1])["compound"]
         # )
-        item["target"] = self.tensorize_target(item["target_text"])
+
         item["emotion"], item["emotion_label"] = self.tensorize_emo(
             item["emotion_text"]
         )
@@ -429,29 +461,39 @@ class EMDataset(Dataset):
             item["emotion_context_vec_mask"],
         ) = self.tensorize_context(item["emotion_context_text"])
 
-        item["keywords_vec"], item["keywords_vec_mask"] = self.tensorize_context(
-            item["keywords_context_text"]
-        )
+        (
+            item["keywords_context_vec"],
+            item["keywords_context_vec_mask"],
+        ) = self.tensorize_context(item["keywords_context_text"])
 
         for rel in relations[:-1]:
             item[rel + "_vec"], item[rel + "_vec_mask"] = self.tensorize_cog(
                 item[rel + "_keywords_text"], item["xReact_keywords_text"]
             )
-        # item["xWant_vec"], item["xWant_vec_mask"] = self.tensorize_cog(
-        #     item["xWant_keywords_text"], item["xReact_keywords_text"]
-        # )
-        # item["xNeed_vec"], item["xNeed_vec_mask"] = self.tensorize_cog(
-        #     item["xNeed_keywords_text"], item["xReact_keywords_text"]
-        # )
-        # item["xIntent_vec"], item["xIntent_vec_mask"] = self.tensorize_cog(
-        #     item["xIntent_keywords_text"], item["xReact_keywords_text"]
-        # )
-        # item["xEffect_vec"], item["xEffect_vec_mask"] = self.tensorize_cog(
-        #     item["xEffect_keywords_text"], item["xReact_keywords_text"]
-        # )
+
+
+        item["target"] = self.tensorize_target(item["target_text"])
+        temp_target = self.vocab.decode_sequence(item["target"])
+        item["target_sentiment_score"] = get_word_sentiments(" ".join(temp_target))
+
+        item["emotion_target_vec"] = self.tensorize_target(item["emotion_target_text"])
+        item["keywords_target_vec"] = self.tensorize_target(
+            item["keywords_target_text"]
+        )
+
         self.pad_item(item)
+
         # item['emotion_context'],item['emotion_context_mask']=self.
-        assert item["keywords_vec"].shape[0] == item["context"].shape[0]
+        assert (
+            item["keywords_context_vec"].shape[0]
+            == item["context"].shape[0]
+            == item["context_sentiment_score"].shape[0]
+        )
+        assert (
+            item["keywords_target_vec"].shape[0]
+            == item["target"].shape[0]
+            == item["target_sentiment_score"].shape[0]
+        )
 
         return item
 
@@ -493,7 +535,7 @@ class EMDataset(Dataset):
             torch.Tensor: cog+aff tensor
         """
         cog_ext = cog_word_list + aff_word_list
-        cog_words = [word for sent in cog_ext for word in sent if word != "<PAD>"]
+        cog_words = [word for sent in cog_ext for word in sent if word != "PAD"]
         cog_ext_idx = [
             self.vocab.word2index.get(word, config.UNK_idx) for word in cog_words
         ]
@@ -577,7 +619,7 @@ class EMDataset(Dataset):
         return len(self.data["target"])
 
 
-def get_sentiment(word:str, pos:str)->float:
+def get_sentiment(word: str, pos: str) -> float:
     """Get the sentiment score for a given word and part of speech
 
     Args:
@@ -597,7 +639,7 @@ def get_sentiment(word:str, pos:str)->float:
         return 0.0
 
 
-def get_word_sentiments(sentence:str)->List[Tuple[str,float]]:
+def get_word_sentiments(sentence: str) -> List[Tuple[str, float]]:
     """Get the sentiment scores for each word in a sentence
 
     Args:
@@ -607,19 +649,21 @@ def get_word_sentiments(sentence:str)->List[Tuple[str,float]]:
         List[Tuple[str,float]]: List of (word, sentiment) pairs
     """
     # Tokenize the sentence and get the part of speech for each word
+    # replace special tokens
     words = nltk.word_tokenize(sentence)
     pos_tags = pos_tag(words)
 
     # Map Penn Treebank POS tags to WordNet POS tags
     pos_mapping = {"N": "n", "V": "v", "R": "r", "J": "a"}
     # word_sentiments = []
-    sentiments_vec=[]
+    sentiments_vec = []
     for word, pos in pos_tags:
         # Convert Penn Treebank POS tags to WordNet POS tags
         word = word.lower()  # Convert the word to lowercase
-        word_pos = pos[0].upper() if pos else 'N'  # Use 'N' as a default if pos is not available
-        word_pos = pos_mapping.get(word_pos, 'n')
-
+        word_pos = (
+            pos[0].upper() if pos else "N"
+        )  # Use 'N' as a default if pos is not available
+        word_pos = pos_mapping.get(word_pos, "n")
 
         # Get the sentiment score for the word
         sentiment = get_sentiment(word, word_pos) if word.isalnum() else 0.0
@@ -649,8 +693,10 @@ def collate_fn(data: List) -> Dict:
             end = lengths[i]
             padded_seqs[i, :end] = seq[:end]
         return padded_seqs, lengths
-    
-    def pad_float_sequence(sequences: List[List[float]]) -> Tuple[List[float], List[int]]:
+
+    def pad_float_sequence(
+        sequences: List[List[float]],
+    ) -> Tuple[List[float], List[int]]:
         """
         padding sequences with 0.0 to max length
         Args:
@@ -673,11 +719,27 @@ def collate_fn(data: List) -> Dict:
 
     input_batch, input_lengths = pad_sequence(item_info["context"])
     mask_input, mask_input_lengths = pad_sequence(item_info["context_mask"])
-    emotion_batch, emotion_lengths = pad_sequence(item_info["emotion_context_vec"])
+    emotion_context_batch, emotion_context_lengths = pad_sequence(
+        item_info["emotion_context_vec"]
+    )
+    keywords_context_batch, keywords_context_lengths = pad_sequence(
+        item_info["keywords_context_vec"]
+    )
 
-    context_sentiment_batch,_=pad_float_sequence(item_info["context_sentiment_score"])
+    context_sentiment_batch, _ = pad_float_sequence(
+        item_info["context_sentiment_score"]
+    )
     # Target
     target_batch, target_lengths = pad_sequence(item_info["target"])
+    emotion_target_batch, emotion_target_lengths = pad_sequence(
+        item_info["emotion_target_vec"]
+    )
+    keywords_target_batch, keywords_target_lengths = pad_sequence(
+        item_info["keywords_target_vec"]
+    )
+    target_sentiment_batch, _ = pad_float_sequence(
+        item_info["target_sentiment_score"]
+    )
 
     # define return dict
     batch_data = {}
@@ -685,11 +747,23 @@ def collate_fn(data: List) -> Dict:
     batch_data["input_lengths"] = torch.LongTensor(input_lengths)
     batch_data["mask_input"] = mask_input
 
-    batch_data["emotion_context_batch"] = emotion_batch
-    batch_data['context_sentiment_batch']=context_sentiment_batch
+    batch_data["emotion_context_batch"] = emotion_context_batch
+    batch_data["keywords_context_batch"] = keywords_context_batch
+    batch_data["context_sentiment_batch"] = context_sentiment_batch
 
     batch_data["target_batch"] = target_batch
+    batch_data["emotion_target_batch"] = emotion_target_batch
+    batch_data["keywords_target_batch"] = keywords_target_batch
+    batch_data["target_sentiment_batch"] = target_sentiment_batch
     batch_data["target_lengths"] = torch.LongTensor(target_lengths)
 
-    
+    for relation in relations[:-1]:
+        (
+            batch_data[relation + "_batch"],
+            batch_data[relation + "_lengths"],
+        ) = pad_sequence(item_info[relation + "_vec"])
+        batch_data[relation + "_mask"], _ = pad_sequence(
+            item_info[relation + "_vec_mask"]
+        )
+
     return batch_data
